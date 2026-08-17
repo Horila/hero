@@ -87,6 +87,10 @@ Deno.serve(async (req: Request) => {
         ],
         generationConfig: {
           responseMimeType: "application/json",
+          // No output cap by default meant a plan photo with many job rows
+          // could get silently truncated mid-JSON-array. Set explicitly to
+          // gemini-2.5-flash's actual max so a busy plan never gets cut off.
+          maxOutputTokens: 65536,
         },
       }),
     });
