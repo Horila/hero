@@ -72,10 +72,35 @@
     --bg:#f5f1e8; --panel:#ffffff; --line:#ddd4c0; --text:#1a1610; --dim:#6b6152;
     --amber-dim:#f0c896;
   }
+
+  #radioBox{
+    position:fixed;bottom:12px;right:12px;z-index:10;background:var(--panel);
+    border:1px solid var(--line);border-radius:10px;padding:10px;width:180px;
+    box-shadow:0 4px 16px rgba(0,0,0,.3);
+  }
+  #radioBox .radioHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  #radioBox .radioTitle{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.03em;}
+  #radioCollapseBtn{width:auto;padding:2px 6px;font-size:12px;background:transparent;border:none;color:var(--dim);}
+  #radioBox.collapsed .radioBody{display:none;}
+  #radioPlayBtn{width:100%;margin-top:6px;padding:8px;font-size:13px;}
+  #radioUrlInput{font-size:11px;padding:6px;margin-top:0;}
 </style>
 </head>
 <body>
 <button id="themeToggle">🌙 Dark</button>
+
+<div id="radioBox">
+  <div class="radioHead">
+    <span class="radioTitle">📻 RADIO</span>
+    <button id="radioCollapseBtn">▁</button>
+  </div>
+  <div class="radioBody">
+    <input type="text" id="radioUrlInput" placeholder="stream URL">
+    <button id="radioPlayBtn">▶ Play</button>
+  </div>
+  <audio id="radioAudio" preload="none"></audio>
+</div>
+
 <div id="app">
 
   <!-- ============ LOGIN ============ -->
@@ -163,6 +188,35 @@ themeToggle.addEventListener('click', ()=>{
   const next = document.body.classList.contains('light') ? 'dark' : 'light';
   localStorage.setItem('coreCountingTheme', next);
   applyTheme(next);
+});
+
+// ---------- Radio ----------
+const radioBox = document.getElementById('radioBox');
+const radioCollapseBtn = document.getElementById('radioCollapseBtn');
+const radioUrlInput = document.getElementById('radioUrlInput');
+const radioPlayBtn = document.getElementById('radioPlayBtn');
+const radioAudio = document.getElementById('radioAudio');
+
+radioUrlInput.value = localStorage.getItem('coreCountingRadioUrl') || 'https://ice1.somafm.com/groovesalad-128-mp3';
+if(localStorage.getItem('coreCountingRadioCollapsed') === 'true') radioBox.classList.add('collapsed');
+
+radioCollapseBtn.addEventListener('click', ()=>{
+  radioBox.classList.toggle('collapsed');
+  localStorage.setItem('coreCountingRadioCollapsed', radioBox.classList.contains('collapsed'));
+});
+
+radioPlayBtn.addEventListener('click', ()=>{
+  if(radioAudio.paused){
+    const url = radioUrlInput.value.trim();
+    if(!url) return;
+    localStorage.setItem('coreCountingRadioUrl', url);
+    if(radioAudio.src !== url) radioAudio.src = url;
+    radioAudio.play().catch(err => { radioPlayBtn.textContent = '⚠ ' + err.message; });
+    radioPlayBtn.textContent = '⏸ Pause';
+  } else {
+    radioAudio.pause();
+    radioPlayBtn.textContent = '▶ Play';
+  }
 });
 
 const loginScreen = document.getElementById('loginScreen');
