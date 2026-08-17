@@ -206,7 +206,7 @@ tabSummaryBtn.addEventListener('click', ()=>{
 manualAddBtn.addEventListener('click', ()=>{
   extractedJobs.push({
     grade: '', am_number: '', item_number: '', customer_name: '', weight_kg: '',
-    planned_qty: '', mingzhi_hansberg_no: '', status: '', is_trial: false
+    planned_qty: '', mingzhi_hansberg_no: '', status: '', is_trial: false, is_doubles: false
   });
   renderReview();
   setStatus('New job added below — fill it in, then Save', 'ok');
@@ -236,7 +236,8 @@ fileInput.addEventListener('change', async (e)=>{
     extractedJobs = (data.jobs || []).map(j => ({
       grade: j.grade ?? '', am_number: j.am_number ?? '', item_number: j.item_number ?? '',
       customer_name: j.customer_name ?? '', weight_kg: j.weight_kg ?? '', planned_qty: j.planned_qty ?? '',
-      mingzhi_hansberg_no: j.mingzhi_hansberg_no ?? '', status: j.status ?? '', is_trial: !!j.is_trial
+      mingzhi_hansberg_no: j.mingzhi_hansberg_no ?? '', status: j.status ?? '', is_trial: !!j.is_trial,
+      is_doubles: !!j.is_doubles
     }));
     setStatus(extractedJobs.length + ' job(s) extracted — review before saving', 'ok');
     renderReview();
@@ -296,6 +297,10 @@ function renderReview(){
         <input type="checkbox" data-i="${i}" data-f="is_trial" id="trial${i}" ${job.is_trial ? 'checked':''}>
         <label for="trial${i}" style="font-size:12px;">Trial job</label>
       </div>
+      <div class="checkboxRow">
+        <input type="checkbox" data-i="${i}" data-f="is_doubles" id="doubles${i}" ${job.is_doubles ? 'checked':''}>
+        <label for="doubles${i}" style="font-size:12px;">Doubles (2 cores per mould)</label>
+      </div>
     `;
     reviewList.appendChild(card);
   });
@@ -328,7 +333,8 @@ saveAllBtn.addEventListener('click', async ()=>{
     planned_qty: j.planned_qty === '' ? null : parseInt(j.planned_qty),
     mingzhi_hansberg_no: j.mingzhi_hansberg_no || null,
     status: j.status || null,
-    is_trial: !!j.is_trial
+    is_trial: !!j.is_trial,
+    is_doubles: !!j.is_doubles
   })).filter(r => r.am_number); // AM number is the join key, refuse to save without it
 
   if(rows.length !== extractedJobs.length){
