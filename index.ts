@@ -38,8 +38,15 @@ or invent a value:
   "planned_qty": number|null,
   "mingzhi_hansberg_no": string|null,
   "status": string|null,
-  "is_trial": boolean
+  "is_trial": boolean,
+  "is_doubles": boolean
 }
+
+For "is_doubles": each job row has a cores/moulds ratio shown as "x/y"
+(e.g. "2/1", "1/1"). If the ratio is 2 cores per 1 mould (2/1), set
+is_doubles to true. If it's 1 core per 1 mould (1/1), set is_doubles to
+false. If this ratio isn't visible for a row, default is_doubles to false
+— never guess.
 
 Return ONLY a raw JSON array. No commentary, no explanation — the response
 body must be valid JSON and nothing else.`;
