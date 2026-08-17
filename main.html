@@ -416,8 +416,19 @@ async function loadSummary(){
   gradeTable.innerHTML = '<tr><th>Grade</th><th>Tonnage</th></tr>' +
     Object.entries(gradeTotals).map(([g,t])=>`<tr><td>${esc(g)}</td><td class="gradeTotal">${t.toFixed(2)} t</td></tr>`).join('');
 
-  jobsTable.innerHTML = '<tr><th>AM No.</th><th>Grade</th><th>Moulds</th><th>Cores</th><th>Weight (kg)</th><th>Tonnage</th><th>Dipping</th><th>Still making</th><th>Comment</th></tr>' +
-    rows.map(r=>`<tr><td>${esc(r.am_number)}</td><td>${esc(r.grade)}</td><td>${r.planned_qty ?? ''}</td><td>${r.counted_total ?? 0}</td><td>${r.weight_kg ?? ''}</td><td>${(r.tonnage||0).toFixed(2)} t</td><td><input type="checkbox" class="dippingCheckbox" data-id="${r.id}" ${r.needs_dipping ? 'checked':''}></td><td>${r.still_making ? '⚠ yes' : ''}</td><td>${esc(r.comment)}</td></tr>`).join('');
+  jobsTable.innerHTML = `
+    <tr>
+      <th rowspan="2">AM No.</th><th rowspan="2">Grade</th>
+      <th colspan="2" style="text-align:center;border-bottom:1px solid var(--line);">MOULDS / CORES</th>
+      <th rowspan="2">Weight (kg)</th><th rowspan="2">Tonnage</th><th rowspan="2">Dipping</th><th rowspan="2">Still making</th><th rowspan="2">Comment</th>
+    </tr>
+    <tr><th>Planned</th><th>Counted (trolley boys)</th></tr>` +
+    rows.map(r=>{
+      const planned = r.planned_qty ?? null;
+      const counted = r.counted_total ?? 0;
+      const short = planned !== null && counted < planned;
+      return `<tr><td>${esc(r.am_number)}</td><td>${esc(r.grade)}</td><td>${planned ?? ''}</td><td style="${short ? 'color:var(--red);font-weight:700;' : 'color:var(--green);font-weight:700;'}">${counted}</td><td>${r.weight_kg ?? ''}</td><td>${(r.tonnage||0).toFixed(2)} t</td><td><input type="checkbox" class="dippingCheckbox" data-id="${r.id}" ${r.needs_dipping ? 'checked':''}></td><td>${r.still_making ? '⚠ yes' : ''}</td><td>${esc(r.comment)}</td></tr>`;
+    }).join('');
 
   jobsTable.querySelectorAll('.dippingCheckbox').forEach(cb=>{
     cb.addEventListener('change', async ()=>{
