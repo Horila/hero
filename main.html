@@ -64,7 +64,9 @@
   .checkboxRow label{margin:0;}
   .dippingCheckbox{width:auto !important;margin:0;}
 
-  #fileInput{display:none;}
+  #fileInput, #fileInputUpload{display:none;}
+  .scanBtnRow{display:flex;gap:8px;}
+  .scanBtnRow button{flex:1;}
   #loginScreen, #mainScreen{display:none;}
 
   #themeToggle{
@@ -141,7 +143,11 @@
     <div id="scanTab">
       <div class="card">
         <input type="file" id="fileInput" accept="image/*" capture="environment">
-        <button class="primary" id="scanBtn">📷 Photograph plan</button>
+        <input type="file" id="fileInputUpload" accept="image/*">
+        <div class="scanBtnRow">
+          <button class="primary" id="scanBtn">📷 Take photo</button>
+          <button id="uploadBtn">🖼 Upload photo</button>
+        </div>
         <button id="manualAddBtn" style="margin-top:8px;">+ Add job manually</button>
         <div id="status"></div>
       </div>
@@ -261,7 +267,9 @@ const dipMemoryList = document.getElementById('dipMemoryList');
 const dipMemoryEmpty = document.getElementById('dipMemoryEmpty');
 
 const fileInput = document.getElementById('fileInput');
+const fileInputUpload = document.getElementById('fileInputUpload');
 const scanBtn = document.getElementById('scanBtn');
+const uploadBtn = document.getElementById('uploadBtn');
 const manualAddBtn = document.getElementById('manualAddBtn');
 const statusEl = document.getElementById('status');
 const reviewList = document.getElementById('reviewList');
@@ -334,14 +342,17 @@ manualAddBtn.addEventListener('click', ()=>{
 
 // ---------- Scan flow ----------
 scanBtn.addEventListener('click', ()=> fileInput.click());
+uploadBtn.addEventListener('click', ()=> fileInputUpload.click());
 
-fileInput.addEventListener('change', async (e)=>{
-  const file = e.target.files[0];
+fileInput.addEventListener('change', (e)=> handleScanFile(e.target.files[0], fileInput));
+fileInputUpload.addEventListener('change', (e)=> handleScanFile(e.target.files[0], fileInputUpload));
+
+async function handleScanFile(file, inputEl){
   if(!file) return;
   setStatus('Reading image…', '');
   try{
     const { base64, mediaType } = await resizeAndEncode(file, 1600);
-    setStatus('Sending to Claude for OCR… this can take 10–20s', '');
+    setStatus('Sending to Gemini for OCR… this can take 10–20s', '');
     const { data, error: fnError } = await supa.functions.invoke('ocr-plan', {
       body: { imageBase64: base64, mediaType }
     });
@@ -364,8 +375,8 @@ fileInput.addEventListener('change', async (e)=>{
   }catch(err){
     setStatus('Error: ' + err.message, 'err');
   }
-  fileInput.value = '';
-});
+  inputEl.value = '';
+}
 
 function resizeAndEncode(file, maxDim){
   return new Promise((resolve, reject)=>{
