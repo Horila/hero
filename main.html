@@ -426,8 +426,9 @@ async function loadSummary(){
     rows.map(r=>{
       const planned = r.planned_qty ?? null;
       const counted = r.counted_total ?? 0;
+      const mouldsCounted = Math.round(r.effective_qty ?? 0);
       const short = planned !== null && counted < planned;
-      return `<tr><td>${esc(r.am_number)}</td><td>${esc(r.grade)}</td><td>${planned ?? ''}</td><td style="${short ? 'color:var(--red);font-weight:700;' : 'color:var(--green);font-weight:700;'}">${counted}</td><td>${r.weight_kg ?? ''}</td><td>${(r.tonnage||0).toFixed(2)} t</td><td><input type="checkbox" class="dippingCheckbox" data-id="${r.id}" ${r.needs_dipping ? 'checked':''}></td><td>${r.still_making ? '⚠ yes' : ''}</td><td>${esc(r.comment)}</td></tr>`;
+      return `<tr><td>${esc(r.am_number)}</td><td>${esc(r.grade)}</td><td>${planned ?? ''}</td><td style="${short ? 'color:var(--red);font-weight:700;' : 'color:var(--green);font-weight:700;'}">${counted}/${mouldsCounted}</td><td>${r.weight_kg ?? ''}</td><td>${(r.tonnage||0).toFixed(2)} t</td><td><input type="checkbox" class="dippingCheckbox" data-id="${r.id}" ${r.needs_dipping ? 'checked':''}></td><td>${r.still_making ? '⚠ yes' : ''}</td><td>${esc(r.comment)}</td></tr>`;
     }).join('');
 
   jobsTable.querySelectorAll('.dippingCheckbox').forEach(cb=>{
