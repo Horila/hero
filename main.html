@@ -369,8 +369,8 @@ async function loadSummary(){
   gradeTable.innerHTML = '<tr><th>Grade</th><th>Tonnage</th></tr>' +
     Object.entries(gradeTotals).map(([g,t])=>`<tr><td>${esc(g)}</td><td class="gradeTotal">${t.toFixed(2)} t</td></tr>`).join('');
 
-  jobsTable.innerHTML = '<tr><th>AM No.</th><th>Grade</th><th>Counted</th><th>Tonnage</th><th>Dipping</th></tr>' +
-    rows.map(r=>`<tr><td>${esc(r.am_number)}</td><td>${esc(r.grade)}</td><td>${r.counted_total ?? 0}</td><td>${(r.tonnage||0).toFixed(2)} t</td><td><input type="checkbox" class="dippingCheckbox" data-id="${r.id}" ${r.needs_dipping ? 'checked':''}></td></tr>`).join('');
+  jobsTable.innerHTML = '<tr><th>AM No.</th><th>Grade</th><th>Counted</th><th>Tonnage</th><th>Dipping</th><th>Still making</th><th>Comment</th></tr>' +
+    rows.map(r=>`<tr><td>${esc(r.am_number)}</td><td>${esc(r.grade)}</td><td>${r.counted_total ?? 0}</td><td>${(r.tonnage||0).toFixed(2)} t</td><td><input type="checkbox" class="dippingCheckbox" data-id="${r.id}" ${r.needs_dipping ? 'checked':''}></td><td>${r.still_making ? '⚠ yes' : ''}</td><td>${esc(r.comment)}</td></tr>`).join('');
 
   jobsTable.querySelectorAll('.dippingCheckbox').forEach(cb=>{
     cb.addEventListener('change', async ()=>{

@@ -55,6 +55,17 @@
   .trolleysNum{font-family:var(--mono);font-size:16px;font-weight:700;min-width:22px;text-align:center;}
   .groupSub{font-family:var(--mono);font-size:10px;color:var(--dim);text-align:right;margin-top:4px;}
 
+  .stillMakingRow{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+  .stillMakingRow input{width:auto;margin:0;}
+  .stillMakingRow label{font-family:var(--mono);font-size:12px;color:var(--text);}
+
+  .commentBox{
+    width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);
+    background:#1e1a14;color:var(--text);font-size:13px;font-family:var(--sans);
+    margin-bottom:10px;resize:vertical;min-height:44px;
+  }
+  .commentBox::placeholder{color:var(--dim);}
+
   .totalBox{
     background:#1e1a14;border-radius:8px;padding:12px;text-align:center;
     border:1px solid var(--line);
@@ -117,6 +128,8 @@ async function loadJobs(){
     group_a_trolleys: j.group_a_trolleys || 0,
     group_b_cores: j.group_b_cores || 0,
     group_b_trolleys: j.group_b_trolleys || 0,
+    comment: j.comment || '',
+    still_making: !!j.still_making,
     manual_total_override: null // recomputed fresh each load; only set client-side when boys type a direct total
   }));
   render();
@@ -142,6 +155,13 @@ function render(){
 
       ${groupBoxHtml(j, 'a')}
       ${groupBoxHtml(j, 'b')}
+
+      <div class="stillMakingRow">
+        <input type="checkbox" id="stillMaking-${j.job_id}" class="stillMakingCheckbox" data-job="${j.job_id}" ${j.still_making ? 'checked' : ''}>
+        <label for="stillMaking-${j.job_id}">Still making — not finished yet</label>
+      </div>
+
+      <textarea class="commentBox" placeholder="Notes for the office…" data-job="${j.job_id}">${esc(j.comment)}</textarea>
 
       <div class="totalBox">
         <input type="number" inputmode="numeric" class="totalInput num" value="${computeTotal(j)}" data-job="${j.job_id}">
@@ -193,9 +213,26 @@ listEl.addEventListener('click', (e)=>{
   queueSave(jobId);
 });
 
+listEl.addEventListener('change', (e)=>{
+  const cb = e.target.closest('.stillMakingCheckbox');
+  if(!cb) return;
+  const jobId = cb.dataset.job;
+  const job = jobs.find(j=>j.job_id === jobId);
+  job.still_making = cb.checked;
+  queueSave(jobId);
+});
+
 listEl.addEventListener('input', (e)=>{
   const coresInput = e.target.closest('.coresInput');
   const totalInput = e.target.closest('.totalInput');
+  const commentBox = e.target.closest('.commentBox');
+  if(commentBox){
+    const jobId = commentBox.dataset.job;
+    const job = jobs.find(j=>j.job_id === jobId);
+    job.comment = commentBox.value;
+    queueSave(jobId);
+    return;
+  }
   if(coresInput){
     const jobId = coresInput.dataset.job;
     const g = coresInput.dataset.group;
@@ -247,6 +284,8 @@ function queueSave(jobId){
       group_a_trolleys: job.group_a_trolleys || 0,
       group_b_cores: job.group_b_cores || 0,
       group_b_trolleys: job.group_b_trolleys || 0,
+      comment: job.comment || '',
+      still_making: !!job.still_making,
       manual_total_override: job.manual_total_override ?? null,
       updated_at: new Date().toISOString()
     }, { onConflict: 'job_id' });
