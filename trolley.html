@@ -37,29 +37,23 @@
     padding:8px; border-radius:6px; margin-bottom:12px; letter-spacing:.03em;
   }
 
-  .trolleyListHeader{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
-  .trolleyListHeader .count{font-family:var(--mono);font-size:12px;color:var(--dim);}
-  .trolleyListHeader .count b{color:var(--text);font-size:14px;}
-  .addTrolleyBtn{
-    font-family:var(--sans);font-weight:700;font-size:13px;padding:9px 14px;border-radius:8px;
-    border:none;background:linear-gradient(180deg,#ff9a2e,#d9700f);color:#1a0e00;
-  }
-  .addTrolleyBtn:active{opacity:.8;}
-
-  .trolleyList{margin-bottom:12px;}
-  .entryRow{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
-  .entryLabel{font-family:var(--mono);font-size:11px;color:var(--dim);width:58px;flex-shrink:0;}
-  .entryInput{
+  .groupBox{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;background:#120f0b;}
+  .groupBox .groupLabel{font-family:var(--mono);font-size:10px;color:var(--dim);margin-bottom:6px;letter-spacing:.03em;}
+  .groupRow{display:flex;align-items:center;gap:8px;}
+  .coresInput{
     flex:1;padding:10px;border-radius:8px;border:1px solid var(--line);
     background:#1e1a14;color:var(--text);font-size:16px;font-family:var(--mono);text-align:center;
   }
-  .removeEntryBtn{
+  .coresInput::placeholder{color:var(--dim);}
+  .stepper{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+  .stepBtn{
     width:36px;height:36px;border-radius:8px;border:1px solid var(--line);background:#1e1a14;
-    color:var(--red);font-size:16px;font-weight:700;flex-shrink:0;
+    color:var(--amber);font-size:18px;font-weight:700;flex-shrink:0;
     display:flex;align-items:center;justify-content:center;
   }
-  .removeEntryBtn:active{background:rgba(217,67,46,.15);}
-  .noEntries{font-family:var(--mono);font-size:12px;color:var(--dim);padding:10px 0;text-align:center;}
+  .stepBtn:active{background:rgba(255,138,30,.2);}
+  .trolleysNum{font-family:var(--mono);font-size:16px;font-weight:700;min-width:22px;text-align:center;}
+  .groupSub{font-family:var(--mono);font-size:10px;color:var(--dim);text-align:right;margin-top:4px;}
 
   .totalBox{
     background:#1e1a14;border-radius:8px;padding:12px;text-align:center;
@@ -83,7 +77,7 @@
 <body>
 <div id="app">
   <h1>Core Counting</h1>
-  <div class="subtitle">add a trolley as you count each one</div>
+  <div class="subtitle">set cores per trolley, tap + for each trolley counted</div>
   <button id="refreshBtn">↻ Refresh job list</button>
   <div id="list"></div>
   <div id="empty" style="display:none;">No jobs yet — check back once the plan's been loaded.</div>
@@ -114,7 +108,10 @@ async function loadJobs(){
   }
   jobs = (data || []).map(j => ({
     ...j,
-    trolley_entries: Array.isArray(j.trolley_entries) ? j.trolley_entries : [],
+    group_a_cores: j.group_a_cores || 0,
+    group_a_trolleys: j.group_a_trolleys || 0,
+    group_b_cores: j.group_b_cores || 0,
+    group_b_trolleys: j.group_b_trolleys || 0,
     manual_total_override: null // recomputed fresh each load; only set client-side when boys type a direct total
   }));
   render();
@@ -138,14 +135,8 @@ function render(){
 
       ${j.needs_dipping ? '<div class="dippingBanner">⚠ DIPPING REQUIRED</div>' : ''}
 
-      <div class="trolleyListHeader">
-        <div class="count">TROLLEYS COUNTED: <b>${j.trolley_entries.length}</b></div>
-        <button class="addTrolleyBtn" data-job="${j.job_id}">+ Add trolley</button>
-      </div>
-
-      <div class="trolleyList" data-trolley-list="${j.job_id}">
-        ${entryRowsHtml(j)}
-      </div>
+      ${groupBoxHtml(j, 'a')}
+      ${groupBoxHtml(j, 'b')}
 
       <div class="totalBox">
         <input type="number" inputmode="numeric" class="totalInput num" value="${computeTotal(j)}" data-job="${j.job_id}">
@@ -154,82 +145,78 @@ function render(){
       <div class="saveState" data-savestate="${j.job_id}"></div>
     </div>
   `).join('');
-
-  wireJobCard();
 }
 
-function entryRowsHtml(j){
-  if(!j.trolley_entries.length){
-    return '<div class="noEntries">No trolleys logged yet — tap "+ Add trolley"</div>';
-  }
-  return j.trolley_entries.map((val, i) => `
-    <div class="entryRow">
-      <span class="entryLabel">Trolley ${i+1}</span>
-      <input type="number" inputmode="numeric" class="entryInput" value="${val ?? ''}" data-job="${j.job_id}" data-index="${i}" placeholder="cores">
-      <div class="removeEntryBtn" data-job="${j.job_id}" data-index="${i}">✕</div>
+function groupBoxHtml(j, g){
+  const cores = j[`group_${g}_cores`] || 0;
+  const trolleys = j[`group_${g}_trolleys`] || 0;
+  return `
+    <div class="groupBox">
+      <div class="groupLabel">BOX ${g.toUpperCase()} — CORES PER TROLLEY</div>
+      <div class="groupRow">
+        <input type="number" inputmode="numeric" class="coresInput" placeholder="cores" value="${cores || ''}" data-job="${j.job_id}" data-group="${g}" data-field="cores">
+        <div class="stepper">
+          <div class="stepBtn minusBtn" data-job="${j.job_id}" data-group="${g}">−</div>
+          <span class="trolleysNum" data-job="${j.job_id}" data-group="${g}" data-field="trolleysNum">${trolleys}</span>
+          <div class="stepBtn plusBtn" data-job="${j.job_id}" data-group="${g}">+</div>
+        </div>
+      </div>
+      <div class="groupSub" data-job="${j.job_id}" data-group="${g}" data-field="sub">${cores} × ${trolleys} = ${cores * trolleys}</div>
     </div>
-  `).join('');
+  `;
 }
 
 function computeTotal(j){
   if(j.manual_total_override !== null && j.manual_total_override !== undefined) return j.manual_total_override;
-  return j.trolley_entries.reduce((sum, v) => sum + (parseInt(v) || 0), 0);
+  return (j.group_a_cores * j.group_a_trolleys) + (j.group_b_cores * j.group_b_trolleys);
 }
 
-function wireJobCard(){
-  listEl.querySelectorAll('.addTrolleyBtn').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const jobId = btn.dataset.job;
-      const job = jobs.find(j=>j.job_id === jobId);
-      job.trolley_entries.push(null);
-      job.manual_total_override = null;
-      rerenderCard(jobId);
-      queueSave(jobId);
-    });
-  });
-
-  listEl.querySelectorAll('.removeEntryBtn').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const jobId = btn.dataset.job;
-      const idx = parseInt(btn.dataset.index);
-      const job = jobs.find(j=>j.job_id === jobId);
-      job.trolley_entries.splice(idx, 1);
-      job.manual_total_override = null;
-      rerenderCard(jobId);
-      queueSave(jobId);
-    });
-  });
-
-  listEl.querySelectorAll('.entryInput').forEach(inp=>{
-    inp.addEventListener('input', ()=>{
-      const jobId = inp.dataset.job;
-      const idx = parseInt(inp.dataset.index);
-      const job = jobs.find(j=>j.job_id === jobId);
-      job.trolley_entries[idx] = parseInt(inp.value);
-      job.manual_total_override = null;
-      updateTotalDisplay(jobId);
-      queueSave(jobId);
-    });
-  });
-
-  listEl.querySelectorAll('.totalInput').forEach(inp=>{
-    inp.addEventListener('input', ()=>{
-      const jobId = inp.dataset.job;
-      const job = jobs.find(j=>j.job_id === jobId);
-      const val = parseInt(inp.value);
-      job.manual_total_override = isNaN(val) ? null : val;
-      queueSave(jobId);
-    });
-  });
-}
-
-function rerenderCard(jobId){
+// Delegated listeners — bound ONCE, never re-bound on render, so they
+// never stack no matter how many times the list re-renders.
+listEl.addEventListener('click', (e)=>{
+  const minus = e.target.closest('.minusBtn');
+  const plus = e.target.closest('.plusBtn');
+  if(!minus && !plus) return;
+  const btn = minus || plus;
+  const jobId = btn.dataset.job;
+  const g = btn.dataset.group;
   const job = jobs.find(j=>j.job_id === jobId);
-  const card = document.querySelector(`.jobCard[data-job="${jobId}"]`);
-  card.querySelector('.count').innerHTML = 'TROLLEYS COUNTED: <b>' + job.trolley_entries.length + '</b>';
-  card.querySelector('.trolleyList').innerHTML = entryRowsHtml(job);
+  const field = `group_${g}_trolleys`;
+  job[field] = Math.max(0, job[field] + (plus ? 1 : -1));
+  job.manual_total_override = null;
+  updateGroupDisplay(jobId, g);
+  queueSave(jobId);
+});
+
+listEl.addEventListener('input', (e)=>{
+  const coresInput = e.target.closest('.coresInput');
+  const totalInput = e.target.closest('.totalInput');
+  if(coresInput){
+    const jobId = coresInput.dataset.job;
+    const g = coresInput.dataset.group;
+    const job = jobs.find(j=>j.job_id === jobId);
+    job[`group_${g}_cores`] = parseInt(coresInput.value) || 0;
+    job.manual_total_override = null;
+    updateGroupDisplay(jobId, g);
+    queueSave(jobId);
+    return;
+  }
+  if(totalInput){
+    const jobId = totalInput.dataset.job;
+    const job = jobs.find(j=>j.job_id === jobId);
+    const val = parseInt(totalInput.value);
+    job.manual_total_override = isNaN(val) ? null : val;
+    queueSave(jobId);
+  }
+});
+
+function updateGroupDisplay(jobId, g){
+  const job = jobs.find(j=>j.job_id === jobId);
+  const cores = job[`group_${g}_cores`];
+  const trolleys = job[`group_${g}_trolleys`];
+  document.querySelector(`.trolleysNum[data-job="${jobId}"][data-group="${g}"]`).textContent = trolleys;
+  document.querySelector(`.groupSub[data-job="${jobId}"][data-group="${g}"]`).textContent = `${cores} × ${trolleys} = ${cores * trolleys}`;
   updateTotalDisplay(jobId);
-  wireJobCard(); // re-bind listeners for the regenerated rows
 }
 
 function updateTotalDisplay(jobId){
@@ -248,11 +235,13 @@ function queueSave(jobId){
     stateEl.textContent = 'saving…';
     stateEl.className = 'saveState saving';
     const job = jobs.find(j=>j.job_id === jobId);
-    const cleanEntries = job.trolley_entries.map(v => (v === null || v === undefined || isNaN(v)) ? 0 : v);
 
     const { error } = await supa.from('counts').upsert({
       job_id: jobId,
-      trolley_entries: cleanEntries,
+      group_a_cores: job.group_a_cores || 0,
+      group_a_trolleys: job.group_a_trolleys || 0,
+      group_b_cores: job.group_b_cores || 0,
+      group_b_trolleys: job.group_b_trolleys || 0,
       manual_total_override: job.manual_total_override ?? null,
       updated_at: new Date().toISOString()
     }, { onConflict: 'job_id' });
