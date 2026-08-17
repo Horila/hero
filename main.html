@@ -102,6 +102,11 @@
       <button id="tabSummaryBtn">Summary</button>
     </div>
 
+    <div class="card" style="padding:10px;">
+      <label>PROGRAMME DAY — new jobs save here, summary shows this day only</label>
+      <input type="date" id="jobDatePicker">
+    </div>
+
     <!-- SCAN TAB -->
     <div id="scanTab">
       <div class="card">
@@ -184,6 +189,12 @@ const saveAllBtn = document.getElementById('saveAllBtn');
 const refreshSummaryBtn = document.getElementById('refreshSummaryBtn');
 const gradeTable = document.getElementById('gradeTable');
 const jobsTable = document.getElementById('jobsTable');
+
+const jobDatePicker = document.getElementById('jobDatePicker');
+jobDatePicker.value = new Date().toISOString().slice(0,10);
+jobDatePicker.addEventListener('change', ()=>{
+  if(summaryTab.style.display !== 'none') loadSummary();
+});
 
 let extractedJobs = [];
 
@@ -349,6 +360,15 @@ function renderReview(){
 saveAllBtn.addEventListener('click', async ()=>{
   if(!extractedJobs.length) return;
   setStatus('Saving…', '');
+  const jobDate = jobDatePicker.value || new Date().toISOString().slice(0,10);
+
+  const itemNumbers = extractedJobs.map(j => j.item_number).filter(Boolean);
+  let dipMemory = {};
+  if(itemNumbers.length){
+    const { data: dipRows } = await supa.from('dip_items').select('item_number,needs_dipping').in('item_number', itemNumbers);
+    (dipRows || []).forEach(d => { dipMemory[d.item_number] = d.needs_dipping; });
+  }
+
   const rows = extractedJobs.map(j => ({
     grade: j.grade || null,
     am_number: j.am_number || null,
@@ -359,14 +379,16 @@ saveAllBtn.addEventListener('click', async ()=>{
     mingzhi_hansberg_no: j.mingzhi_hansberg_no || null,
     status: j.status || null,
     is_trial: !!j.is_trial,
-    is_doubles: !!j.is_doubles
+    is_doubles: !!j.is_doubles,
+    job_date: jobDate,
+    needs_dipping: !!dipMemory[j.item_number]
   })).filter(r => r.am_number); // AM number is the join key, refuse to save without it
 
   if(rows.length !== extractedJobs.length){
     setStatus('Some rows skipped — AM number is required to save', 'err');
   }
 
-  const { error } = await supa.from('jobs').upsert(rows, { onConflict: 'am_number' });
+  const { error } = await supa.from('jobs').upsert(rows, { onConflict: 'am_number,job_date' });
   if(error){ setStatus('Save failed: ' + error.message, 'err'); return; }
 
   setStatus(rows.length + ' job(s) saved', 'ok');
@@ -379,7 +401,8 @@ saveAllBtn.addEventListener('click', async ()=>{
 refreshSummaryBtn.addEventListener('click', loadSummary);
 
 async function loadSummary(){
-  const { data, error } = await supa.from('job_summary').select('*');
+  const jobDate = jobDatePicker.value || new Date().toISOString().slice(0,10);
+  const { data, error } = await supa.from('job_summary').select('*').eq('job_date', jobDate);
   if(error){ jobsTable.innerHTML = '<tr><td>Error: '+esc(error.message)+'</td></tr>'; return; }
 
   const rows = data || [];
@@ -393,8 +416,8 @@ async function loadSummary(){
   gradeTable.innerHTML = '<tr><th>Grade</th><th>Tonnage</th></tr>' +
     Object.entries(gradeTotals).map(([g,t])=>`<tr><td>${esc(g)}</td><td class="gradeTotal">${t.toFixed(2)} t</td></tr>`).join('');
 
-  jobsTable.innerHTML = '<tr><th>AM No.</th><th>Grade</th><th>Counted</th><th>Tonnage</th><th>Dipping</th><th>Still making</th><th>Comment</th></tr>' +
-    rows.map(r=>`<tr><td>${esc(r.am_number)}</td><td>${esc(r.grade)}</td><td>${r.counted_total ?? 0}</td><td>${(r.tonnage||0).toFixed(2)} t</td><td><input type="checkbox" class="dippingCheckbox" data-id="${r.id}" ${r.needs_dipping ? 'checked':''}></td><td>${r.still_making ? '⚠ yes' : ''}</td><td>${esc(r.comment)}</td></tr>`).join('');
+  jobsTable.innerHTML = '<tr><th>AM No.</th><th>Grade</th><th>Moulds</th><th>Cores</th><th>Weight (kg)</th><th>Tonnage</th><th>Dipping</th><th>Still making</th><th>Comment</th></tr>' +
+    rows.map(r=>`<tr><td>${esc(r.am_number)}</td><td>${esc(r.grade)}</td><td>${r.planned_qty ?? ''}</td><td>${r.counted_total ?? 0}</td><td>${r.weight_kg ?? ''}</td><td>${(r.tonnage||0).toFixed(2)} t</td><td><input type="checkbox" class="dippingCheckbox" data-id="${r.id}" ${r.needs_dipping ? 'checked':''}></td><td>${r.still_making ? '⚠ yes' : ''}</td><td>${esc(r.comment)}</td></tr>`).join('');
 
   jobsTable.querySelectorAll('.dippingCheckbox').forEach(cb=>{
     cb.addEventListener('change', async ()=>{
@@ -402,6 +425,16 @@ async function loadSummary(){
       if(error){
         alert('Failed to update dipping flag: ' + error.message);
         cb.checked = !cb.checked;
+        return;
+      }
+      if(cb.checked){
+        const row = rows.find(r => r.id === cb.dataset.id);
+        if(row && row.item_number){
+          await supa.from('dip_items').upsert(
+            { item_number: row.item_number, needs_dipping: true, updated_at: new Date().toISOString() },
+            { onConflict: 'item_number' }
+          );
+        }
       }
     });
   });

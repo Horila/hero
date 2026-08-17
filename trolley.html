@@ -141,7 +141,8 @@ let jobs = [];
 const saveTimers = {}; // debounce per job
 
 async function loadJobs(){
-  const { data, error } = await supa.from('trolley_jobs').select('*');
+  const today = new Date().toISOString().slice(0,10);
+  const { data, error } = await supa.from('trolley_jobs').select('*').eq('job_date', today);
   if(error){
     listEl.innerHTML = '<div style="color:var(--red);font-family:var(--mono);font-size:12px;">Error loading jobs: '+esc(error.message)+'</div>';
     return;
