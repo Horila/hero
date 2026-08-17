@@ -93,6 +93,19 @@
   .badge-warn{background:var(--red-bg);color:var(--red);}
   .badge-trial{background:var(--amber-bg);color:var(--amber);}
 
+  /* ---- Summary job cards (replaces a wide table so nothing scrolls) ---- */
+  .summaryJobCard{border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px;background:var(--panel2);}
+  .summaryJobCard .sjHead{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:2px;}
+  .summaryJobCard .sjAm{font-family:var(--mono);font-weight:700;color:var(--amber);font-size:14px;}
+  .summaryJobCard .sjTonnage{font-family:var(--mono);font-weight:700;font-size:14px;}
+  .summaryJobCard .sjSub{font-size:11.5px;color:var(--dim);margin-bottom:10px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+  .summaryJobCard .sjMetrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px;}
+  .summaryJobCard .sjMetric .v{font-family:var(--mono);font-weight:700;font-size:14px;}
+  .summaryJobCard .sjMetric .k{font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:.03em;text-transform:uppercase;margin-top:2px;}
+  .summaryJobCard .sjFoot{display:flex;justify-content:space-between;align-items:center;gap:8px;padding-top:8px;border-top:1px solid var(--line);}
+  .summaryJobCard .sjDipRow{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--text);}
+  .summaryJobCard .sjComment{font-size:12px;color:var(--dim);margin-top:8px;font-style:italic;}
+
   #status{font-family:var(--mono);font-size:12px;color:var(--dim);margin:10px 0;min-height:16px;}
   #status.err{color:var(--red);}
   #status.ok{color:var(--green);}
@@ -223,7 +236,7 @@
       </div>
       <div class="card">
         <h2 style="font-size:13px;margin:0 0 8px 0;font-family:var(--mono);color:var(--dim);">JOBS</h2>
-        <div class="tableScroll"><table id="jobsTable"></table></div>
+        <div id="jobsTable"></div>
       </div>
     </div>
 
@@ -719,20 +732,33 @@ async function loadSummary(){
   gradeTable.innerHTML = '<tr><th>Grade</th><th>Tonnage</th></tr>' +
     Object.entries(gradeTotals).map(([g,t])=>`<tr><td>${esc(g)}</td><td class="gradeTotal">${t.toFixed(2)} t</td></tr>`).join('');
 
-  jobsTable.innerHTML = `
-    <tr>
-      <th rowspan="2">AM No.</th><th rowspan="2">Grade</th><th rowspan="2">Trial</th>
-      <th colspan="2" style="text-align:center;border-bottom:1px solid var(--line);">MOULDS / CORES</th>
-      <th rowspan="2">Weight (kg)</th><th rowspan="2">Tonnage</th><th rowspan="2">Dipping</th><th rowspan="2">Still making</th><th rowspan="2">Comment</th>
-    </tr>
-    <tr><th>Planned</th><th>Counted (trolley boys)</th></tr>` +
-    rows.map(r=>{
-      const planned = r.planned_qty ?? null;
-      const counted = r.counted_total ?? 0;
-      const mouldsCounted = Math.round(r.effective_qty ?? 0);
-      const short = planned !== null && counted < planned;
-      return `<tr><td>${esc(r.am_number)}</td><td>${esc(r.grade)}</td><td>${r.is_trial ? '<span class="badge badge-trial">TRIAL</span>' : ''}</td><td>${planned ?? ''}</td><td style="${short ? 'color:var(--red);font-weight:700;' : 'color:var(--green);font-weight:700;'}">${counted}/${mouldsCounted}</td><td>${r.weight_kg ?? ''}</td><td>${(r.tonnage||0).toFixed(2)} t</td><td><input type="checkbox" class="dippingCheckbox" data-id="${r.id}" ${r.needs_dipping ? 'checked':''}></td><td>${r.still_making ? '<span class="badge badge-warn">MAKING</span>' : ''}</td><td>${esc(r.comment)}</td></tr>`;
-    }).join('');
+  jobsTable.innerHTML = rows.length ? rows.map(r=>{
+    const planned = r.planned_qty ?? null;
+    const counted = r.counted_total ?? 0;
+    const mouldsCounted = Math.round(r.effective_qty ?? 0);
+    const short = planned !== null && counted < planned;
+    return `
+      <div class="summaryJobCard">
+        <div class="sjHead">
+          <span class="sjAm">${esc(r.am_number)}</span>
+          <span class="sjTonnage">${(r.tonnage||0).toFixed(2)} t</span>
+        </div>
+        <div class="sjSub">
+          <span>${esc(r.grade) || '—'}</span>
+          ${r.is_trial ? '<span class="badge badge-trial">TRIAL</span>' : ''}
+          ${r.still_making ? '<span class="badge badge-warn">MAKING</span>' : ''}
+        </div>
+        <div class="sjMetrics">
+          <div class="sjMetric"><div class="v">${planned ?? '—'}</div><div class="k">Planned</div></div>
+          <div class="sjMetric"><div class="v" style="color:${short ? 'var(--red)' : 'var(--green)'};">${counted}/${mouldsCounted}</div><div class="k">Cores/moulds</div></div>
+          <div class="sjMetric"><div class="v">${r.weight_kg ?? '—'}</div><div class="k">Weight (kg)</div></div>
+        </div>
+        <div class="sjFoot">
+          <label class="sjDipRow"><input type="checkbox" class="dippingCheckbox" data-id="${r.id}" ${r.needs_dipping ? 'checked':''}> Dipping</label>
+        </div>
+        ${r.comment ? `<div class="sjComment">"${esc(r.comment)}"</div>` : ''}
+      </div>`;
+  }).join('') : '<div style="font-family:var(--mono);font-size:12px;color:var(--dim);text-align:center;padding:20px 0;">No jobs for this day.</div>';
 
   jobsTable.querySelectorAll('.dippingCheckbox').forEach(cb=>{
     cb.addEventListener('change', async ()=>{
