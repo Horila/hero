@@ -45,6 +45,10 @@
   .rowTop{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
   .rowTop .idx{font-family:var(--mono);font-size:11px;color:var(--dim);}
   .removeBtn{background:transparent;border:none;color:var(--red);font-size:18px;font-weight:700;width:auto;padding:2px 8px;}
+  .reorderBtn{background:transparent;border:1px solid var(--line);border-radius:6px;color:var(--text);font-size:14px;width:30px;height:30px;padding:0;}
+  .reorderBtn:disabled{opacity:.3;}
+  .manageSaveState{font-family:var(--mono);font-size:10px;color:var(--dim);text-align:right;margin-top:4px;height:12px;}
+  .manageSaveState.saved{color:var(--green);}
 
   table{width:100%;border-collapse:collapse;font-size:12.5px;}
   th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);font-family:var(--mono);}
@@ -124,6 +128,7 @@
 
     <div class="tabs">
       <button id="tabScanBtn" class="active">Scan Plan</button>
+      <button id="tabManageBtn">Manage Jobs</button>
       <button id="tabSummaryBtn">Summary</button>
     </div>
 
@@ -144,6 +149,15 @@
       <div id="reviewList"></div>
 
       <button class="primary" id="saveAllBtn" style="display:none;">Save all to jobs table</button>
+    </div>
+
+    <!-- MANAGE TAB -->
+    <div id="manageTab" style="display:none;">
+      <div class="card">
+        <button id="refreshManageBtn">↻ Refresh</button>
+      </div>
+      <div id="manageList"></div>
+      <div id="manageEmpty" style="display:none;font-family:var(--mono);font-size:12px;color:var(--dim);text-align:center;padding:20px 0;">No jobs for this day.</div>
     </div>
 
     <!-- SUMMARY TAB -->
@@ -229,9 +243,14 @@ const logoutBtn = document.getElementById('logoutBtn');
 const userEmail = document.getElementById('userEmail');
 
 const tabScanBtn = document.getElementById('tabScanBtn');
+const tabManageBtn = document.getElementById('tabManageBtn');
 const tabSummaryBtn = document.getElementById('tabSummaryBtn');
 const scanTab = document.getElementById('scanTab');
+const manageTab = document.getElementById('manageTab');
 const summaryTab = document.getElementById('summaryTab');
+const refreshManageBtn = document.getElementById('refreshManageBtn');
+const manageList = document.getElementById('manageList');
+const manageEmpty = document.getElementById('manageEmpty');
 
 const fileInput = document.getElementById('fileInput');
 const scanBtn = document.getElementById('scanBtn');
@@ -248,6 +267,7 @@ const jobDatePicker = document.getElementById('jobDatePicker');
 jobDatePicker.value = new Date().toISOString().slice(0,10);
 jobDatePicker.addEventListener('change', ()=>{
   if(summaryTab.style.display !== 'none') loadSummary();
+  if(manageTab.style.display !== 'none') loadManageJobs();
 });
 
 let extractedJobs = [];
@@ -282,15 +302,17 @@ logoutBtn.addEventListener('click', async ()=>{
 });
 
 // ---------- Tabs ----------
-tabScanBtn.addEventListener('click', ()=>{
-  tabScanBtn.classList.add('active'); tabSummaryBtn.classList.remove('active');
-  scanTab.style.display = 'block'; summaryTab.style.display = 'none';
-});
-tabSummaryBtn.addEventListener('click', ()=>{
-  tabSummaryBtn.classList.add('active'); tabScanBtn.classList.remove('active');
-  summaryTab.style.display = 'block'; scanTab.style.display = 'none';
-  loadSummary();
-});
+function showTab(tab){
+  tabScanBtn.classList.toggle('active', tab === 'scan');
+  tabManageBtn.classList.toggle('active', tab === 'manage');
+  tabSummaryBtn.classList.toggle('active', tab === 'summary');
+  scanTab.style.display = tab === 'scan' ? 'block' : 'none';
+  manageTab.style.display = tab === 'manage' ? 'block' : 'none';
+  summaryTab.style.display = tab === 'summary' ? 'block' : 'none';
+}
+tabScanBtn.addEventListener('click', ()=> showTab('scan'));
+tabManageBtn.addEventListener('click', ()=>{ showTab('manage'); loadManageJobs(); });
+tabSummaryBtn.addEventListener('click', ()=>{ showTab('summary'); loadSummary(); });
 
 // ---------- Manual entry ----------
 manualAddBtn.addEventListener('click', ()=>{
@@ -450,6 +472,136 @@ saveAllBtn.addEventListener('click', async ()=>{
   reviewList.innerHTML = '';
   saveAllBtn.style.display = 'none';
 });
+
+// ---------- Manage Jobs (edit / delete / reorder) ----------
+let managedJobs = [];
+const manageSaveTimers = {};
+
+refreshManageBtn.addEventListener('click', loadManageJobs);
+
+async function loadManageJobs(){
+  const jobDate = jobDatePicker.value || new Date().toISOString().slice(0,10);
+  const { data, error } = await supa.from('jobs').select('*').eq('job_date', jobDate).order('sort_order', { ascending: true });
+  if(error){ manageList.innerHTML = '<div style="color:var(--red);font-family:var(--mono);font-size:12px;">Error: '+esc(error.message)+'</div>'; return; }
+  managedJobs = data || [];
+  renderManage();
+}
+
+function renderManage(){
+  if(!managedJobs.length){
+    manageList.innerHTML = '';
+    manageEmpty.style.display = 'block';
+    return;
+  }
+  manageEmpty.style.display = 'none';
+
+  manageList.innerHTML = managedJobs.map((j, i) => `
+    <div class="jobCard" data-id="${j.id}">
+      <div class="rowTop">
+        <span class="idx">JOB ${i+1}</span>
+        <div style="display:flex;gap:6px;">
+          <button class="reorderBtn manageUpBtn" data-id="${j.id}" ${i === 0 ? 'disabled' : ''}>↑</button>
+          <button class="reorderBtn manageDownBtn" data-id="${j.id}" ${i === managedJobs.length-1 ? 'disabled' : ''}>↓</button>
+          <button class="removeBtn manageDeleteBtn" data-id="${j.id}">✕</button>
+        </div>
+      </div>
+      <div class="fieldRow">
+        <div><label>GRADE</label><input data-id="${j.id}" data-f="grade" value="${esc(j.grade)}"></div>
+        <div><label>AM NUMBER</label><input data-id="${j.id}" data-f="am_number" value="${esc(j.am_number)}"></div>
+      </div>
+      <div class="fieldRow">
+        <div><label>ITEM NUMBER</label><input data-id="${j.id}" data-f="item_number" value="${esc(j.item_number)}"></div>
+        <div><label>CUSTOMER</label><input data-id="${j.id}" data-f="customer_name" value="${esc(j.customer_name)}"></div>
+      </div>
+      <div class="fieldRow">
+        <div><label>WEIGHT (KG)</label><input data-id="${j.id}" data-f="weight_kg" type="number" step="any" value="${esc(j.weight_kg)}"></div>
+        <div><label>PLANNED CORES/MOULDS</label><input data-id="${j.id}" data-f="planned_qty" type="number" value="${esc(j.planned_qty)}"></div>
+      </div>
+      <div class="fieldRow">
+        <div><label>MINGZHI/HANSBERG NO.</label><input data-id="${j.id}" data-f="mingzhi_hansberg_no" value="${esc(j.mingzhi_hansberg_no)}"></div>
+        <div><label>STATUS</label><input data-id="${j.id}" data-f="status" value="${esc(j.status)}"></div>
+      </div>
+      <div class="checkboxRow">
+        <input type="checkbox" data-id="${j.id}" data-f="is_trial" id="manageTrial${j.id}" ${j.is_trial ? 'checked':''}>
+        <label for="manageTrial${j.id}" style="font-size:12px;">Trial job</label>
+      </div>
+      <div class="checkboxRow">
+        <input type="checkbox" data-id="${j.id}" data-f="is_doubles" id="manageDoubles${j.id}" ${j.is_doubles ? 'checked':''}>
+        <label for="manageDoubles${j.id}" style="font-size:12px;">Doubles (2 cores per mould)</label>
+      </div>
+      <div class="manageSaveState" data-savestate="${j.id}"></div>
+    </div>
+  `).join('');
+}
+
+// Delegated listeners — bound once, never re-bound on render.
+manageList.addEventListener('input', (e)=>{
+  const inp = e.target.closest('input[data-f]');
+  if(!inp || inp.type === 'checkbox') return;
+  const job = managedJobs.find(j => j.id === inp.dataset.id);
+  job[inp.dataset.f] = inp.value;
+  queueManageSave(inp.dataset.id, inp.dataset.f, inp.value);
+});
+
+manageList.addEventListener('change', (e)=>{
+  const cb = e.target.closest('input[type="checkbox"][data-f]');
+  if(!cb) return;
+  const job = managedJobs.find(j => j.id === cb.dataset.id);
+  job[cb.dataset.f] = cb.checked;
+  queueManageSave(cb.dataset.id, cb.dataset.f, cb.checked);
+});
+
+manageList.addEventListener('click', async (e)=>{
+  const upBtn = e.target.closest('.manageUpBtn');
+  const downBtn = e.target.closest('.manageDownBtn');
+  const delBtn = e.target.closest('.manageDeleteBtn');
+
+  if(upBtn || downBtn){
+    const id = (upBtn || downBtn).dataset.id;
+    const idx = managedJobs.findIndex(j => j.id === id);
+    const swapIdx = upBtn ? idx - 1 : idx + 1;
+    if(swapIdx < 0 || swapIdx >= managedJobs.length) return;
+    const a = managedJobs[idx], b = managedJobs[swapIdx];
+    const aOrder = a.sort_order, bOrder = b.sort_order;
+    a.sort_order = bOrder; b.sort_order = aOrder;
+    [managedJobs[idx], managedJobs[swapIdx]] = [managedJobs[swapIdx], managedJobs[idx]];
+    renderManage();
+    await Promise.all([
+      supa.from('jobs').update({ sort_order: a.sort_order }).eq('id', a.id),
+      supa.from('jobs').update({ sort_order: b.sort_order }).eq('id', b.id)
+    ]);
+    return;
+  }
+
+  if(delBtn){
+    const id = delBtn.dataset.id;
+    const job = managedJobs.find(j => j.id === id);
+    if(!confirm(`Delete job ${job.am_number}? This also removes its trolley count. Cannot be undone.`)) return;
+    const { error } = await supa.from('jobs').delete().eq('id', id);
+    if(error){ alert('Delete failed: ' + error.message); return; }
+    managedJobs = managedJobs.filter(j => j.id !== id);
+    renderManage();
+  }
+});
+
+function queueManageSave(id, field, value){
+  const stateEl = document.querySelector(`.manageSaveState[data-savestate="${id}"]`);
+  if(stateEl){ stateEl.textContent = 'unsaved…'; stateEl.className = 'manageSaveState'; }
+
+  clearTimeout(manageSaveTimers[id]);
+  manageSaveTimers[id] = setTimeout(async ()=>{
+    const job = managedJobs.find(j => j.id === id);
+    const patch = {};
+    patch[field] = (field === 'weight_kg') ? (job[field] === '' ? null : parseFloat(job[field]))
+      : (field === 'planned_qty') ? (job[field] === '' ? null : parseInt(job[field]))
+      : job[field];
+    const { error } = await supa.from('jobs').update(patch).eq('id', id);
+    const el = document.querySelector(`.manageSaveState[data-savestate="${id}"]`);
+    if(!el) return;
+    if(error){ el.textContent = 'save failed: ' + error.message; el.style.color = 'var(--red)'; }
+    else { el.textContent = 'saved'; el.className = 'manageSaveState saved'; }
+  }, 500);
+}
 
 // ---------- Summary ----------
 refreshSummaryBtn.addEventListener('click', loadSummary);
