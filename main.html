@@ -158,6 +158,12 @@
       </div>
       <div id="manageList"></div>
       <div id="manageEmpty" style="display:none;font-family:var(--mono);font-size:12px;color:var(--dim);text-align:center;padding:20px 0;">No jobs for this day.</div>
+
+      <div class="card">
+        <h2 style="font-size:13px;margin:0 0 8px 0;font-family:var(--mono);color:var(--dim);">DIPPING MEMORY — item numbers that auto-tick dipping on future jobs</h2>
+        <div id="dipMemoryList"></div>
+        <div id="dipMemoryEmpty" style="display:none;font-family:var(--mono);font-size:12px;color:var(--dim);text-align:center;padding:10px 0;">Nothing remembered yet — tick Dipping on a job with an item number to start.</div>
+      </div>
     </div>
 
     <!-- SUMMARY TAB -->
@@ -251,6 +257,8 @@ const summaryTab = document.getElementById('summaryTab');
 const refreshManageBtn = document.getElementById('refreshManageBtn');
 const manageList = document.getElementById('manageList');
 const manageEmpty = document.getElementById('manageEmpty');
+const dipMemoryList = document.getElementById('dipMemoryList');
+const dipMemoryEmpty = document.getElementById('dipMemoryEmpty');
 
 const fileInput = document.getElementById('fileInput');
 const scanBtn = document.getElementById('scanBtn');
@@ -311,7 +319,7 @@ function showTab(tab){
   summaryTab.style.display = tab === 'summary' ? 'block' : 'none';
 }
 tabScanBtn.addEventListener('click', ()=> showTab('scan'));
-tabManageBtn.addEventListener('click', ()=>{ showTab('manage'); loadManageJobs(); });
+tabManageBtn.addEventListener('click', ()=>{ showTab('manage'); loadManageJobs(); loadDipMemory(); });
 tabSummaryBtn.addEventListener('click', ()=>{ showTab('summary'); loadSummary(); });
 
 // ---------- Manual entry ----------
@@ -398,7 +406,7 @@ function renderReview(){
         <div><label>CUSTOMER</label><input data-i="${i}" data-f="customer_name" value="${esc(job.customer_name)}"></div>
       </div>
       <div class="fieldRow">
-        <div><label>WEIGHT (KG)</label><input data-i="${i}" data-f="weight_kg" type="number" step="any" value="${esc(job.weight_kg)}"></div>
+        <div><label>WEIGHT PER CORE/MOULD (KG)</label><input data-i="${i}" data-f="weight_kg" type="number" step="any" value="${esc(job.weight_kg)}"></div>
         <div><label>PLANNED CORES/MOULDS</label><input data-i="${i}" data-f="planned_qty" type="number" value="${esc(job.planned_qty)}"></div>
       </div>
       <div class="fieldRow">
@@ -477,7 +485,33 @@ saveAllBtn.addEventListener('click', async ()=>{
 let managedJobs = [];
 const manageSaveTimers = {};
 
-refreshManageBtn.addEventListener('click', loadManageJobs);
+refreshManageBtn.addEventListener('click', ()=>{ loadManageJobs(); loadDipMemory(); });
+
+async function loadDipMemory(){
+  const { data, error } = await supa.from('dip_items').select('*').order('item_number');
+  if(error){ dipMemoryList.innerHTML = '<div style="color:var(--red);font-family:var(--mono);font-size:12px;">Error: '+esc(error.message)+'</div>'; return; }
+  const items = data || [];
+  if(!items.length){
+    dipMemoryList.innerHTML = '';
+    dipMemoryEmpty.style.display = 'block';
+    return;
+  }
+  dipMemoryEmpty.style.display = 'none';
+  dipMemoryList.innerHTML = items.map(d => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12.5px;">
+      <span>${esc(d.item_number)}</span>
+      <button class="removeBtn dipMemoryDeleteBtn" data-item="${esc(d.item_number)}">✕</button>
+    </div>
+  `).join('');
+}
+
+dipMemoryList.addEventListener('click', async (e)=>{
+  const btn = e.target.closest('.dipMemoryDeleteBtn');
+  if(!btn) return;
+  const { error } = await supa.from('dip_items').delete().eq('item_number', btn.dataset.item);
+  if(error){ alert('Failed to remove: ' + error.message); return; }
+  loadDipMemory();
+});
 
 async function loadManageJobs(){
   const jobDate = jobDatePicker.value || new Date().toISOString().slice(0,10);
@@ -514,7 +548,7 @@ function renderManage(){
         <div><label>CUSTOMER</label><input data-id="${j.id}" data-f="customer_name" value="${esc(j.customer_name)}"></div>
       </div>
       <div class="fieldRow">
-        <div><label>WEIGHT (KG)</label><input data-id="${j.id}" data-f="weight_kg" type="number" step="any" value="${esc(j.weight_kg)}"></div>
+        <div><label>WEIGHT PER CORE/MOULD (KG)</label><input data-id="${j.id}" data-f="weight_kg" type="number" step="any" value="${esc(j.weight_kg)}"></div>
         <div><label>PLANNED CORES/MOULDS</label><input data-id="${j.id}" data-f="planned_qty" type="number" value="${esc(j.planned_qty)}"></div>
       </div>
       <div class="fieldRow">
@@ -624,7 +658,7 @@ async function loadSummary(){
 
   jobsTable.innerHTML = `
     <tr>
-      <th rowspan="2">AM No.</th><th rowspan="2">Grade</th>
+      <th rowspan="2">AM No.</th><th rowspan="2">Grade</th><th rowspan="2">Trial</th>
       <th colspan="2" style="text-align:center;border-bottom:1px solid var(--line);">MOULDS / CORES</th>
       <th rowspan="2">Weight (kg)</th><th rowspan="2">Tonnage</th><th rowspan="2">Dipping</th><th rowspan="2">Still making</th><th rowspan="2">Comment</th>
     </tr>
@@ -634,7 +668,7 @@ async function loadSummary(){
       const counted = r.counted_total ?? 0;
       const mouldsCounted = Math.round(r.effective_qty ?? 0);
       const short = planned !== null && counted < planned;
-      return `<tr><td>${esc(r.am_number)}</td><td>${esc(r.grade)}</td><td>${planned ?? ''}</td><td style="${short ? 'color:var(--red);font-weight:700;' : 'color:var(--green);font-weight:700;'}">${counted}/${mouldsCounted}</td><td>${r.weight_kg ?? ''}</td><td>${(r.tonnage||0).toFixed(2)} t</td><td><input type="checkbox" class="dippingCheckbox" data-id="${r.id}" ${r.needs_dipping ? 'checked':''}></td><td>${r.still_making ? '⚠ yes' : ''}</td><td>${esc(r.comment)}</td></tr>`;
+      return `<tr><td>${esc(r.am_number)}</td><td>${esc(r.grade)}</td><td>${r.is_trial ? '🧪' : ''}</td><td>${planned ?? ''}</td><td style="${short ? 'color:var(--red);font-weight:700;' : 'color:var(--green);font-weight:700;'}">${counted}/${mouldsCounted}</td><td>${r.weight_kg ?? ''}</td><td>${(r.tonnage||0).toFixed(2)} t</td><td><input type="checkbox" class="dippingCheckbox" data-id="${r.id}" ${r.needs_dipping ? 'checked':''}></td><td>${r.still_making ? '⚠ yes' : ''}</td><td>${esc(r.comment)}</td></tr>`;
     }).join('');
 
   jobsTable.querySelectorAll('.dippingCheckbox').forEach(cb=>{

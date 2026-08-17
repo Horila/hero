@@ -292,39 +292,74 @@ function updateTotalDisplay(jobId){
   if(totalInput) totalInput.value = computeTotal(job);
 }
 
+// ---------- Offline-safe save: failed saves persist in localStorage
+// and auto-retry on reconnect, so a dead wifi spot doesn't silently
+// lose a count.
+const PENDING_KEY = 'coreCountingPendingSaves';
+function getPending(){ try{ return JSON.parse(localStorage.getItem(PENDING_KEY) || '{}'); }catch(e){ return {}; } }
+function setPendingEntry(jobId, payload){ const p = getPending(); p[jobId] = payload; localStorage.setItem(PENDING_KEY, JSON.stringify(p)); }
+function clearPendingEntry(jobId){ const p = getPending(); delete p[jobId]; localStorage.setItem(PENDING_KEY, JSON.stringify(p)); }
+
 function queueSave(jobId){
   const stateEl = document.querySelector(`[data-savestate="${jobId}"]`);
   stateEl.textContent = 'unsaved…';
   stateEl.className = 'saveState';
 
   clearTimeout(saveTimers[jobId]);
-  saveTimers[jobId] = setTimeout(async ()=>{
-    stateEl.textContent = 'saving…';
-    stateEl.className = 'saveState saving';
-    const job = jobs.find(j=>j.job_id === jobId);
+  saveTimers[jobId] = setTimeout(()=> performSave(jobId), 500);
+}
 
-    const { error } = await supa.from('counts').upsert({
-      job_id: jobId,
-      group_a_cores: job.group_a_cores || 0,
-      group_a_trolleys: job.group_a_trolleys || 0,
-      group_b_cores: job.group_b_cores || 0,
-      group_b_trolleys: job.group_b_trolleys || 0,
-      comment: job.comment || '',
-      still_making: !!job.still_making,
-      manual_total_override: job.manual_total_override ?? null,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'job_id' });
+async function performSave(jobId){
+  const stateEl = document.querySelector(`[data-savestate="${jobId}"]`);
+  const job = jobs.find(j=>j.job_id === jobId);
+  if(!job) return;
 
-    if(error){
-      stateEl.textContent = 'save failed: ' + error.message;
+  if(stateEl){ stateEl.textContent = 'saving…'; stateEl.className = 'saveState saving'; }
+
+  const payload = {
+    job_id: jobId,
+    group_a_cores: job.group_a_cores || 0,
+    group_a_trolleys: job.group_a_trolleys || 0,
+    group_b_cores: job.group_b_cores || 0,
+    group_b_trolleys: job.group_b_trolleys || 0,
+    comment: job.comment || '',
+    still_making: !!job.still_making,
+    manual_total_override: job.manual_total_override ?? null,
+    updated_at: new Date().toISOString()
+  };
+
+  const { error } = await supa.from('counts').upsert(payload, { onConflict: 'job_id' });
+
+  if(error){
+    setPendingEntry(jobId, payload);
+    if(stateEl){
+      stateEl.textContent = 'offline — will retry: ' + error.message;
       stateEl.className = 'saveState';
       stateEl.style.color = 'var(--red)';
-    } else {
-      stateEl.textContent = 'saved';
-      stateEl.className = 'saveState saved';
     }
-  }, 500);
+    setTimeout(()=> retryPendingSaves(), 15000);
+  } else {
+    clearPendingEntry(jobId);
+    if(stateEl){ stateEl.textContent = 'saved'; stateEl.className = 'saveState saved'; }
+  }
 }
+
+async function retryPendingSaves(){
+  const pending = getPending();
+  const jobIds = Object.keys(pending);
+  if(!jobIds.length) return;
+  for(const jobId of jobIds){
+    const { error } = await supa.from('counts').upsert(pending[jobId], { onConflict: 'job_id' });
+    const stateEl = document.querySelector(`[data-savestate="${jobId}"]`);
+    if(!error){
+      clearPendingEntry(jobId);
+      if(stateEl){ stateEl.textContent = 'saved'; stateEl.className = 'saveState saved'; }
+    }
+  }
+  if(Object.keys(getPending()).length) setTimeout(()=> retryPendingSaves(), 15000);
+}
+
+window.addEventListener('online', retryPendingSaves);
 
 function esc(v){
   if(v === null || v === undefined) return '';
@@ -333,6 +368,7 @@ function esc(v){
 
 refreshBtn.addEventListener('click', loadJobs);
 loadJobs();
+retryPendingSaves();
 </script>
 </body>
 </html>

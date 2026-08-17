@@ -1,12 +1,22 @@
 -- ============================================================
--- Core Counting App — schema, views, and access control
--- Run this once in Supabase: Dashboard → SQL Editor → New query → Run
+-- Core Counting App — CONSOLIDATED schema, views, and access control
+-- This file represents the CURRENT full desired state of the database
+-- (everything the individual migration-*.sql files added, merged).
+-- Safe to run on a fresh Supabase project. Also safe to re-run on the
+-- already-migrated project — every statement is idempotent
+-- (if not exists / or replace / drop if exists).
+--
+-- The old migration-*.sql files are kept as a historical record of
+-- how the schema evolved — they don't need to be run again once this
+-- file has been applied.
+--
+-- Run in Supabase: Dashboard → SQL Editor → New query → Run
 -- ============================================================
 
 create extension if not exists pgcrypto;
 
 -- ---------- Main jobs table (Horatio's app only) ----------
-create table jobs (
+create table if not exists jobs (
   id uuid primary key default gen_random_uuid(),
   am_number text not null,
   item_number text,
@@ -17,51 +27,119 @@ create table jobs (
   mingzhi_hansberg_no text,
   status text,
   is_trial boolean default false,
+  is_doubles boolean default false,
+  needs_dipping boolean default false,
+  job_date date not null default current_date,
+  sort_order bigint default extract(epoch from clock_timestamp())::bigint,
   created_at timestamptz default now()
 );
 
-create unique index jobs_am_number_idx on jobs (am_number);
+-- Uniqueness is (am_number, job_date), not am_number alone — the same
+-- job number can legitimately reappear on a different programme day.
+drop index if exists jobs_am_number_idx;
+create unique index if not exists jobs_am_number_date_idx on jobs (am_number, job_date);
 
 -- ---------- Counts table (trolley boys write here, no login) ----------
-create table counts (
+create table if not exists counts (
   id uuid primary key default gen_random_uuid(),
   job_id uuid references jobs(id) on delete cascade,
-  cores_per_trolley integer default 0,
-  trolley_count integer default 0,
+  group_a_cores integer default 0,
+  group_a_trolleys integer default 0,
+  group_b_cores integer default 0,
+  group_b_trolleys integer default 0,
+  manual_total_override integer,
+  comment text,
+  still_making boolean default false,
   updated_at timestamptz default now()
 );
 
-create unique index counts_job_id_idx on counts (job_id);
+create unique index if not exists counts_job_id_idx on counts (job_id);
+
+-- ---------- Dipping memory (by item number) ----------
+-- Ticking dipping on for a job remembers its item_number here; future
+-- jobs with the same item_number auto-tick on save. Only ever learns
+-- "true" — unticking a job does not erase the memory.
+create table if not exists dip_items (
+  item_number text primary key,
+  needs_dipping boolean not null default true,
+  updated_at timestamptz default now()
+);
 
 -- ---------- View: what the trolley boys are allowed to see ----------
--- Only 3 job fields + their own count inputs + the computed total.
--- Views run with the OWNER's permissions, so this can read the full
--- jobs table internally while only ever exposing these columns.
+-- Only the fields they need + their own count inputs + the computed
+-- total. Views run with the OWNER's permissions, so this can read the
+-- full jobs table internally while only ever exposing these columns.
+drop view if exists trolley_jobs;
 create view trolley_jobs as
 select
   j.id as job_id,
   j.am_number,
   j.planned_qty,
   j.mingzhi_hansberg_no,
-  coalesce(c.cores_per_trolley, 0) as cores_per_trolley,
-  coalesce(c.trolley_count, 0) as trolley_count,
-  coalesce(c.cores_per_trolley, 0) * coalesce(c.trolley_count, 0) as total_cores
+  j.job_date,
+  j.needs_dipping,
+  coalesce(c.group_a_cores, 0) as group_a_cores,
+  coalesce(c.group_a_trolleys, 0) as group_a_trolleys,
+  coalesce(c.group_b_cores, 0) as group_b_cores,
+  coalesce(c.group_b_trolleys, 0) as group_b_trolleys,
+  coalesce(c.comment, '') as comment,
+  coalesce(c.still_making, false) as still_making,
+  coalesce(
+    c.manual_total_override,
+    coalesce(c.group_a_cores, 0) * coalesce(c.group_a_trolleys, 0)
+    + coalesce(c.group_b_cores, 0) * coalesce(c.group_b_trolleys, 0)
+  ) as total_cores
 from jobs j
 left join counts c on c.job_id = j.id
-order by j.created_at desc;
+order by j.job_date desc, j.sort_order asc;
 
 -- ---------- View: Horatio's summary with tonnage ----------
+-- NOTE: "select j.*" freezes its column list at CREATE VIEW time —
+-- any future jobs column that should appear here needs this view
+-- dropped and recreated, not just the table altered.
+drop view if exists job_summary;
 create view job_summary as
 select
   j.*,
-  coalesce(c.cores_per_trolley, 0) * coalesce(c.trolley_count, 0) as counted_total,
+  coalesce(c.comment, '') as comment,
+  coalesce(c.still_making, false) as still_making,
+  coalesce(
+    c.manual_total_override,
+    coalesce(c.group_a_cores, 0) * coalesce(c.group_a_trolleys, 0)
+    + coalesce(c.group_b_cores, 0) * coalesce(c.group_b_trolleys, 0)
+  ) as counted_total,
+  case
+    when j.is_doubles then coalesce(
+      c.manual_total_override,
+      coalesce(c.group_a_cores, 0) * coalesce(c.group_a_trolleys, 0)
+      + coalesce(c.group_b_cores, 0) * coalesce(c.group_b_trolleys, 0)
+    ) / 2.0
+    else coalesce(
+      c.manual_total_override,
+      coalesce(c.group_a_cores, 0) * coalesce(c.group_a_trolleys, 0)
+      + coalesce(c.group_b_cores, 0) * coalesce(c.group_b_trolleys, 0)
+    )
+  end as effective_qty,
   round(
-    (coalesce(c.cores_per_trolley, 0) * coalesce(c.trolley_count, 0) * coalesce(j.weight_kg, 0)) / 1000.0,
+    (
+      case
+        when j.is_doubles then coalesce(
+          c.manual_total_override,
+          coalesce(c.group_a_cores, 0) * coalesce(c.group_a_trolleys, 0)
+          + coalesce(c.group_b_cores, 0) * coalesce(c.group_b_trolleys, 0)
+        ) / 2.0
+        else coalesce(
+          c.manual_total_override,
+          coalesce(c.group_a_cores, 0) * coalesce(c.group_a_trolleys, 0)
+          + coalesce(c.group_b_cores, 0) * coalesce(c.group_b_trolleys, 0)
+        )
+      end
+    ) * coalesce(j.weight_kg, 0) / 1000.0,
     3
   ) as tonnage
 from jobs j
 left join counts c on c.job_id = j.id
-order by j.created_at desc;
+order by j.job_date desc, j.sort_order asc;
 
 -- ============================================================
 -- Access control
@@ -69,12 +147,14 @@ order by j.created_at desc;
 
 alter table jobs enable row level security;
 alter table counts enable row level security;
+alter table dip_items enable row level security;
 
--- Lock down default grants, then grant precisely what's needed
 revoke all on jobs from anon, authenticated;
 revoke all on counts from anon, authenticated;
+revoke all on dip_items from anon, authenticated;
 
 -- jobs: only your logged-in account can touch this table at all
+drop policy if exists "authenticated full access to jobs" on jobs;
 create policy "authenticated full access to jobs"
   on jobs for all
   using (auth.role() = 'authenticated')
@@ -83,6 +163,10 @@ create policy "authenticated full access to jobs"
 grant select, insert, update, delete on jobs to authenticated;
 
 -- counts: trolley boys (anonymous) can read/write, but never delete
+drop policy if exists "anon can read counts" on counts;
+drop policy if exists "anon can insert counts" on counts;
+drop policy if exists "anon can update counts" on counts;
+
 create policy "anon can read counts"
   on counts for select
   using (true);
@@ -93,10 +177,20 @@ create policy "anon can insert counts"
 
 create policy "anon can update counts"
   on counts for update
-  using (true);
+  using (true)
+  with check (true);
 
 grant select, insert, update on counts to anon;
 grant select on counts to authenticated;
+
+-- dip_items: your logged-in account only
+drop policy if exists "authenticated full access to dip_items" on dip_items;
+create policy "authenticated full access to dip_items"
+  on dip_items for all
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
+
+grant select, insert, update, delete on dip_items to authenticated;
 
 -- Views: trolley_jobs is public (anon), job_summary is yours only
 grant select on trolley_jobs to anon;
