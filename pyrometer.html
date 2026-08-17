@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Optical Pyrometer</title>
+<style>
+  :root{
+    --bg: #0a0908;
+    --panel: #16130f;
+    --panel-line: #2a231a;
+    --text: #e8e0d4;
+    --text-dim: #8a8072;
+    --amber: #ff8a1e;
+    --amber-dim: #7a4a1a;
+    --red-warn: #d9432e;
+    --green-ok: #5fb87a;
+    --mono: 'SF Mono', 'Courier New', ui-monospace, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{
+    margin:0; padding:0; width:100%; height:100%; overflow:hidden;
+    background:var(--bg); color:var(--text); font-family:var(--sans);
+    -webkit-user-select:none; user-select:none;
+  }
+  #app{ position:fixed; inset:0; display:flex; flex-direction:column; }
+
+  /* ---- Camera view ---- */
+  #camWrap{ position:relative; flex:1; min-height:0; background:#000; overflow:hidden; }
+  video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  #hiddenCanvas{ display:none; }
+
+  #target{
+    position:absolute; width:56px; height:56px; left:50%; top:50%;
+    transform:translate(-50%,-50%); pointer-events:none; z-index:5;
+  }
+  #target::before, #target::after{
+    content:''; position:absolute; background:var(--amber);
+    box-shadow:0 0 6px rgba(255,138,30,.9);
+  }
+  #target::before{ left:50%; top:0; width:2px; height:100%; transform:translateX(-1px); opacity:.85;}
+  #target::after{ top:50%; left:0; height:2px; width:100%; transform:translateY(-1px); opacity:.85;}
+  #target .ring{
+    position:absolute; inset:8px; border:1.5px solid var(--amber);
+    border-radius:50%; opacity:.7;
+  }
+
+  #topBar, #botBar{
+    position:absolute; left:0; right:0; z-index:6;
+    display:flex; align-items:center; gap:8px;
+    padding:10px 12px; background:linear-gradient(to bottom, rgba(0,0,0,.55), transparent);
+  }
+  #topBar{ top:0; }
+  #botBar{ bottom:0; background:linear-gradient(to top, rgba(0,0,0,.6), transparent); justify-content:flex-end;}
+
+  .chip{
+    font-family:var(--mono); font-size:11px; letter-spacing:.03em;
+    padding:5px 9px; border-radius:4px; border:1px solid var(--panel-line);
+    background:rgba(22,19,15,.75); color:var(--text-dim);
+  }
+  .chip.live{ color:var(--green-ok); border-color:rgba(95,184,122,.4); }
+  .chip.warn{ color:var(--red-warn); border-color:rgba(217,67,46,.4); }
+
+  button.iconbtn{
+    font-family:var(--sans); font-size:12px; font-weight:600;
+    padding:8px 12px; border-radius:6px; border:1px solid var(--panel-line);
+    background:rgba(22,19,15,.8); color:var(--text); cursor:pointer;
+  }
+  button.iconbtn:active{ background:rgba(255,138,30,.15); border-color:var(--amber-dim); }
+
+  /* ---- Readout panel ---- */
+  #panel{
+    background:var(--panel); border-top:1px solid var(--panel-line);
+    padding:14px 16px calc(14px + env(safe-area-inset-bottom)) 16px;
+    flex-shrink:0;
+  }
+  #readout{ display:flex; align-items:baseline; gap:10px; }
+  #tempNum{
+    font-family:var(--mono); font-weight:700; font-size:56px; line-height:1;
+    letter-spacing:-.02em; transition:color .3s;
+  }
+  #tempUnit{ font-family:var(--mono); font-size:20px; color:var(--text-dim); }
+  #statusLine{
+    font-family:var(--mono); font-size:11px; color:var(--text-dim);
+    margin-top:6px; letter-spacing:.02em;
+  }
+  #statusLine .good{ color:var(--green-ok); }
+  #statusLine .bad{ color:var(--red-warn); }
+
+  #actionRow{ display:flex; gap:8px; margin-top:12px; }
+  #actionRow button{
+    flex:1; font-family:var(--sans); font-weight:600; font-size:13px;
+    padding:11px; border-radius:8px; border:1px solid var(--panel-line);
+    background:#1e1a14; color:var(--text); cursor:pointer;
+  }
+  #actionRow button.primary{
+    background:linear-gradient(180deg, #ff9a2e, #d9700f); color:#1a0e00; border:none;
+  }
+  #actionRow button:active{ opacity:.8; }
+
+  #warnBanner{
+    font-size:10.5px; color:var(--text-dim); line-height:1.4;
+    margin-top:10px; padding-top:10px; border-top:1px solid var(--panel-line);
+  }
+  #warnBanner b{ color:var(--red-warn); }
+
+  /* ---- Overlay sheets (calibration / settings) ---- */
+  #overlay{
+    position:fixed; inset:0; z-index:20; background:rgba(6,5,4,.92);
+    display:none; flex-direction:column; padding:16px; padding-top:calc(16px + env(safe-area-inset-top));
+    overflow-y:auto;
+  }
+  #overlay.show{ display:flex; }
+  #overlay h2{ font-size:16px; margin:0 0 4px 0; font-weight:700; }
+  #overlay p.sub{ font-size:12px; color:var(--text-dim); margin:0 0 16px 0; line-height:1.5; }
+  #overlay .closeRow{ display:flex; justify-content:flex-end; margin-bottom:8px;}
+  .field{ margin-bottom:14px; }
+  .field label{ display:block; font-size:11px; color:var(--text-dim); margin-bottom:5px; font-family:var(--mono);}
+  .field input{
+    width:100%; padding:11px; border-radius:6px; border:1px solid var(--panel-line);
+    background:#1e1a14; color:var(--text); font-family:var(--mono); font-size:15px;
+  }
+  .field input:focus{ outline:1px solid var(--amber); border-color:var(--amber); }
+
+  #calList{ margin:8px 0 16px 0; border:1px solid var(--panel-line); border-radius:8px; overflow:hidden; }
+  .calRow{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 12px; font-family:var(--mono); font-size:12px;
+    border-bottom:1px solid var(--panel-line); background:#120f0b;
+  }
+  .calRow:last-child{ border-bottom:none; }
+  .calRow .del{ color:var(--red-warn); font-family:var(--sans); font-weight:700; padding:2px 8px; cursor:pointer; }
+  .fitQuality{ font-family:var(--mono); font-size:12px; padding:10px 12px; border-radius:6px; margin-bottom:14px; }
+  .fitQuality.ok{ background:rgba(95,184,122,.12); color:var(--green-ok); }
+  .fitQuality.bad{ background:rgba(217,67,46,.12); color:var(--red-warn); }
+  .fitQuality.none{ background:rgba(138,128,114,.12); color:var(--text-dim); }
+
+  #exposureBox{ border:1px solid var(--panel-line); border-radius:8px; padding:12px; margin-bottom:16px; }
+  #exposureBox .row{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  #exposureBox .row:last-child{ margin-bottom:0; }
+  #exposureBox label{ font-family:var(--mono); font-size:11px; color:var(--text-dim); min-width:90px; }
+  #exposureBox input[type=range]{ flex:1; }
+  #exposureBox .val{ font-family:var(--mono); font-size:11px; color:var(--text); min-width:44px; text-align:right;}
+
+  .primaryBtn{
+    background:linear-gradient(180deg, #ff9a2e, #d9700f); color:#1a0e00; border:none;
+    font-weight:700; font-size:14px; padding:13px; border-radius:8px; cursor:pointer; width:100%;
+  }
+  .ghostBtn{
+    background:transparent; border:1px solid var(--panel-line); color:var(--text-dim);
+    font-size:13px; padding:11px; border-radius:8px; cursor:pointer; width:100%; margin-top:8px;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="camWrap">
+    <video id="video" playsinline autoplay muted></video>
+    <canvas id="hiddenCanvas"></canvas>
+
+    <div id="topBar">
+      <span class="chip" id="idxChip">idx —</span>
+      <span class="chip" id="lockChip">exposure: auto</span>
+      <div style="flex:1"></div>
+      <button class="iconbtn" id="settingsBtn">⚙ Exposure</button>
+    </div>
+
+    <div id="target"><div class="ring"></div></div>
+
+    <div id="botBar">
+      <button class="iconbtn" id="calBtn">Calibration</button>
+    </div>
+  </div>
+
+  <div id="panel">
+    <div id="readout">
+      <div id="tempNum">—</div>
+      <div id="tempUnit">°C est.</div>
+    </div>
+    <div id="statusLine" id="statusLine">Point the ring at the melt surface. <span class="bad">UNCALIBRATED</span> — add 2+ reference points.</div>
+
+    <div id="actionRow">
+      <button id="addPointBtn" class="primary">+ Add calibration point</button>
+      <button id="freezeBtn">Freeze</button>
+    </div>
+
+    <div id="warnBanner">
+      <b>Estimate only.</b> This is a phone-camera two-color approximation, not a certified instrument. Slag/dross on the surface, ambient light, and camera auto-processing all distort readings. Do not use for safety or process-control decisions in place of a real pyrometer or thermocouple.
+    </div>
+  </div>
+
+</div>
+
+<!-- Calibration sheet -->
+<div id="overlay">
+  <div class="closeRow"><button class="iconbtn" id="closeOverlayBtn">Close</button></div>
+  <h2>Calibration</h2>
+  <p class="sub">Add points as (redness index → known actual temperature). Use a real reference — a certified pyrometer/thermocouple reading, or the melting point of iron (1538°C) captured right at the solidification front. Need at least 2 points spread across your working range; 3–5 is better.</p>
+
+  <div id="fitQuality" class="fitQuality none">No fit yet — add calibration points.</div>
+
+  <div id="calList"></div>
+
+  <div class="field">
+    <label>ADD NEW POINT — CURRENT REDNESS INDEX</label>
+    <input type="text" id="currentIdxDisplay" readonly>
+  </div>
+  <div class="field">
+    <label>KNOWN ACTUAL TEMPERATURE (°C)</label>
+    <input type="number" id="knownTempInput" placeholder="e.g. 1480" inputmode="decimal">
+  </div>
+  <button class="primaryBtn" id="savePointBtn">Save point</button>
+  <button class="ghostBtn" id="clearCalBtn">Clear all calibration</button>
+</div>
+
+<!-- Exposure sheet -->
+<div id="overlay2" class="overlay">
+</div>
+
+<script>
+(function(){
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('hiddenCanvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  const tempNum = document.getElementById('tempNum');
+  const idxChip = document.getElementById('idxChip');
+  const lockChip = document.getElementById('lockChip');
+  const statusLine = document.getElementById('statusLine');
+  const freezeBtn = document.getElementById('freezeBtn');
+  const addPointBtn = document.getElementById('addPointBtn');
+  const calBtn = document.getElementById('calBtn');
+  const overlay = document.getElementById('overlay');
+  const closeOverlayBtn = document.getElementById('closeOverlayBtn');
+  const settingsBtn = document.getElementById('settingsBtn');
+  const currentIdxDisplay = document.getElementById('currentIdxDisplay');
+  const knownTempInput = document.getElementById('knownTempInput');
+  const savePointBtn = document.getElementById('savePointBtn');
+  const clearCalBtn = document.getElementById('clearCalBtn');
+  const calListEl = document.getElementById('calList');
+  const fitQualityEl = document.getElementById('fitQuality');
+
+  let track = null;
+  let frozen = false;
+  let liveIdx = null; // most recent redness index sample
+  let calPoints = loadCal();
+  let fit = null; // {a, b, r2}
+
+  // ---------- Camera setup ----------
+  async function initCamera(){
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      });
+      video.srcObject = stream;
+      track = stream.getVideoTracks()[0];
+      await video.play();
+      requestAnimationFrame(sampleLoop);
+    }catch(e){
+      statusLine.innerHTML = '<span class="bad">Camera access failed: ' + (e.message||e) + '</span>';
+    }
+  }
+
+  // ---------- Manual exposure/WB attempt ----------
+  async function tryLockExposure(){
+    if(!track) return;
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    let applied = [];
+    try{
+      const constraints = { advanced: [] };
+      if(caps.exposureMode && caps.exposureMode.includes('manual')){
+        constraints.advanced.push({ exposureMode: 'manual' });
+        applied.push('exposure');
+      }
+      if(caps.whiteBalanceMode && caps.whiteBalanceMode.includes('manual')){
+        constraints.advanced.push({ whiteBalanceMode: 'manual' });
+        applied.push('white balance');
+      }
+      if(caps.focusMode && caps.focusMode.includes('manual')){
+        constraints.advanced.push({ focusMode: 'manual' });
+      }
+      if(constraints.advanced.length){
+        await track.applyConstraints(constraints);
+      }
+      if(applied.length){
+        lockChip.textContent = 'locked: ' + applied.join(' + ');
+        lockChip.classList.add('live');
+      } else {
+        lockChip.textContent = 'manual lock unsupported (browser/OS)';
+        lockChip.classList.add('warn');
+      }
+    }catch(e){
+      lockChip.textContent = 'lock failed';
+      lockChip.classList.add('warn');
+    }
+  }
+
+  // ---------- Sampling ----------
+  function sampleLoop(){
+    if(!frozen && video.videoWidth){
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const cx = Math.floor(canvas.width/2);
+      const cy = Math.floor(canvas.height/2);
+      const box = 12; // sample box half-size in px
+      const imgData = ctx.getImageData(cx-box, cy-box, box*2, box*2).data;
+
+      let r=0,g=0,b=0,n=0;
+      for(let i=0; i<imgData.length; i+=4){
+        r += imgData[i]; g += imgData[i+1]; b += imgData[i+2]; n++;
+      }
+      r/=n; g/=n; b/=n;
+
+      // Redness index: (R-B)/(R+B). Bounded -1..1, monotonic-ish with color temp
+      // for a glowing blackbody-like source in the visible-red-to-white range.
+      const idx = (r - b) / (r + b + 1e-6);
+      liveIdx = idx;
+
+      idxChip.textContent = 'idx ' + idx.toFixed(3) + '  (R' + r.toFixed(0) + ' G' + g.toFixed(0) + ' B' + b.toFixed(0) + ')';
+      currentIdxDisplay.value = idx.toFixed(4);
+
+      updateReadout(idx);
+    }
+    requestAnimationFrame(sampleLoop);
+  }
+
+  function updateReadout(idx){
+    if(fit && fit.n >= 2){
+      const est = fit.a * idx + fit.b;
+      tempNum.textContent = Math.round(est).toLocaleString();
+      const glow = tempToColor(est);
+      tempNum.style.color = glow;
+      const qualityWord = fit.r2 > 0.9 ? '<span class="good">good</span>' : (fit.r2 > 0.6 ? 'fair' : '<span class="bad">poor</span>');
+      statusLine.innerHTML = fit.n + ' cal points · fit R² ' + fit.r2.toFixed(2) + ' (' + qualityWord + ')';
+    } else {
+      tempNum.textContent = '—';
+      tempNum.style.color = 'var(--text-dim)';
+      statusLine.innerHTML = 'Point the ring at the melt surface. <span class="bad">UNCALIBRATED</span> — add 2+ reference points.';
+    }
+  }
+
+  function tempToColor(t){
+    // purely cosmetic glow shift: dull red -> orange -> yellow-white as estimate rises
+    if(t < 900) return '#8a2a1e';
+    if(t < 1200) return '#d9432e';
+    if(t < 1400) return '#ff8a1e';
+    if(t < 1550) return '#ffb84d';
+    return '#fff2d0';
+  }
+
+  // ---------- Calibration math (least-squares linear fit: T = a*idx + b) ----------
+  function recomputeFit(){
+    if(calPoints.length < 2){ fit = null; renderFitQuality(); return; }
+    const n = calPoints.length;
+    let sumX=0,sumY=0,sumXY=0,sumXX=0;
+    calPoints.forEach(p=>{ sumX+=p.idx; sumY+=p.temp; sumXY+=p.idx*p.temp; sumXX+=p.idx*p.idx; });
+    const denom = (n*sumXX - sumX*sumX);
+    if(Math.abs(denom) < 1e-9){ fit = null; renderFitQuality(); return; }
+    const a = (n*sumXY - sumX*sumY) / denom;
+    const b = (sumY - a*sumX) / n;
+
+    // R^2
+    const meanY = sumY/n;
+    let ssTot=0, ssRes=0;
+    calPoints.forEach(p=>{
+      const pred = a*p.idx + b;
+      ssRes += (p.temp - pred)**2;
+      ssTot += (p.temp - meanY)**2;
+    });
+    const r2 = ssTot > 1e-9 ? (1 - ssRes/ssTot) : 1;
+
+    fit = { a, b, r2, n };
+    renderFitQuality();
+  }
+
+  function renderFitQuality(){
+    if(!fit){
+      fitQualityEl.className = 'fitQuality none';
+      fitQualityEl.textContent = calPoints.length + ' point(s) saved — need at least 2 for a fit.';
+      return;
+    }
+    fitQualityEl.className = 'fitQuality ' + (fit.r2 > 0.75 ? 'ok' : 'bad');
+    fitQualityEl.textContent = 'Linear fit: T = ' + fit.a.toFixed(0) + ' × idx + ' + fit.b.toFixed(0) +
+      '   |   R² = ' + fit.r2.toFixed(3) + (fit.r2 < 0.75 ? '  — weak fit, add more/better-spread points' : '  — solid fit');
+  }
+
+  function renderCalList(){
+    calListEl.innerHTML = '';
+    if(!calPoints.length){
+      calListEl.innerHTML = '<div class="calRow" style="color:var(--text-dim)">No calibration points yet.</div>';
+      return;
+    }
+    calPoints.forEach((p, i)=>{
+      const row = document.createElement('div');
+      row.className = 'calRow';
+      row.innerHTML = '<span>idx ' + p.idx.toFixed(3) + ' → ' + p.temp + '°C</span><span class="del" data-i="'+i+'">✕</span>';
+      calListEl.appendChild(row);
+    });
+    calListEl.querySelectorAll('.del').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        calPoints.splice(parseInt(el.dataset.i), 1);
+        saveCal(); recomputeFit(); renderCalList();
+      });
+    });
+  }
+
+  function loadCal(){
+    try{ return JSON.parse(localStorage.getItem('pyrometer_cal')||'[]'); }catch(e){ return []; }
+  }
+  function saveCal(){
+    localStorage.setItem('pyrometer_cal', JSON.stringify(calPoints));
+  }
+
+  // ---------- UI wiring ----------
+  freezeBtn.addEventListener('click', ()=>{
+    frozen = !frozen;
+    freezeBtn.textContent = frozen ? 'Resume' : 'Freeze';
+    freezeBtn.style.borderColor = frozen ? 'var(--amber)' : 'var(--panel-line)';
+  });
+
+  calBtn.addEventListener('click', ()=>{ overlay.classList.add('show'); renderCalList(); renderFitQuality(); });
+  addPointBtn.addEventListener('click', ()=>{ overlay.classList.add('show'); renderCalList(); renderFitQuality(); knownTempInput.focus(); });
+  closeOverlayBtn.addEventListener('click', ()=> overlay.classList.remove('show'));
+
+  savePointBtn.addEventListener('click', ()=>{
+    const t = parseFloat(knownTempInput.value);
+    if(liveIdx === null || isNaN(t)){
+      knownTempInput.style.borderColor = 'var(--red-warn)';
+      return;
+    }
+    calPoints.push({ idx: liveIdx, temp: t });
+    saveCal();
+    recomputeFit();
+    renderCalList();
+    knownTempInput.value = '';
+    knownTempInput.style.borderColor = 'var(--panel-line)';
+  });
+
+  clearCalBtn.addEventListener('click', ()=>{
+    if(confirm('Clear all calibration points?')){
+      calPoints = [];
+      saveCal(); recomputeFit(); renderCalList();
+    }
+  });
+
+  settingsBtn.addEventListener('click', tryLockExposure);
+
+  recomputeFit();
+  initCamera();
+})();
+</script>
+</body>
+</html>
