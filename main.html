@@ -62,9 +62,20 @@
 
   #fileInput{display:none;}
   #loginScreen, #mainScreen{display:none;}
+
+  #themeToggle{
+    position:fixed;top:12px;right:12px;width:auto;padding:8px 12px;
+    font-size:12px;font-family:var(--mono);z-index:10;
+  }
+
+  body.light{
+    --bg:#f5f1e8; --panel:#ffffff; --line:#ddd4c0; --text:#1a1610; --dim:#6b6152;
+    --amber-dim:#f0c896;
+  }
 </style>
 </head>
 <body>
+<button id="themeToggle">🌙 Dark</button>
 <div id="app">
 
   <!-- ============ LOGIN ============ -->
@@ -135,6 +146,19 @@ const SUPABASE_ANON_KEY = 'sb_publishable_WufbIxfaujFYDbxcQgov4A_UWAHcgKn';
 // ======================================================
 
 const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ---------- Theme toggle ----------
+const themeToggle = document.getElementById('themeToggle');
+function applyTheme(theme){
+  document.body.classList.toggle('light', theme === 'light');
+  themeToggle.textContent = theme === 'light' ? '☀️ Light' : '🌙 Dark';
+}
+applyTheme(localStorage.getItem('coreCountingTheme') || 'dark');
+themeToggle.addEventListener('click', ()=>{
+  const next = document.body.classList.contains('light') ? 'dark' : 'light';
+  localStorage.setItem('coreCountingTheme', next);
+  applyTheme(next);
+});
 
 const loginScreen = document.getElementById('loginScreen');
 const mainScreen = document.getElementById('mainScreen');

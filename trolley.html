@@ -83,9 +83,20 @@
   .saveState.saved{color:var(--green);}
 
   #empty{color:var(--dim);font-family:var(--mono);font-size:13px;text-align:center;padding:40px 0;}
+
+  #themeToggle{
+    position:fixed;top:12px;right:12px;width:auto;padding:8px 12px;
+    font-size:12px;font-family:var(--mono);border-radius:8px;border:1px solid var(--line);
+    background:#1e1a14;color:var(--text);z-index:10;
+  }
+
+  body.light{
+    --bg:#f5f1e8; --panel:#ffffff; --line:#ddd4c0; --text:#1a1610; --dim:#6b6152;
+  }
 </style>
 </head>
 <body>
+<button id="themeToggle">🌙 Dark</button>
 <div id="app">
   <h1>Core Counting</h1>
   <div class="subtitle">set cores per trolley, tap + for each trolley counted</div>
@@ -112,6 +123,19 @@ const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 const listEl = document.getElementById('list');
 const emptyEl = document.getElementById('empty');
 const refreshBtn = document.getElementById('refreshBtn');
+
+// ---------- Theme toggle ----------
+const themeToggle = document.getElementById('themeToggle');
+function applyTheme(theme){
+  document.body.classList.toggle('light', theme === 'light');
+  themeToggle.textContent = theme === 'light' ? '☀️ Light' : '🌙 Dark';
+}
+applyTheme(localStorage.getItem('coreCountingTheme') || 'dark');
+themeToggle.addEventListener('click', ()=>{
+  const next = document.body.classList.contains('light') ? 'dark' : 'light';
+  localStorage.setItem('coreCountingTheme', next);
+  applyTheme(next);
+});
 
 let jobs = [];
 const saveTimers = {}; // debounce per job
