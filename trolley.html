@@ -7,6 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <title>Core Counting</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
 <style>
   :root{
     --bg:#0a0908; --panel:#16130f; --elev:#1e1a14; --sunken:#120f0b; --line:#2a231a; --text:#e8e0d4; --dim:#8a8072;
@@ -116,17 +117,13 @@
   <h1>Core Counting</h1>
   <div class="subtitle">tap Edit to set cores per trolley</div>
   <button id="refreshBtn">↻ Refresh job list</button>
+  <div id="dayWarning" style="display:none;"></div>
   <div id="list"></div>
   <div id="empty" style="display:none;">No jobs yet — check back once the plan's been loaded.</div>
 </div>
 
 <script>
-// ======================================================
-// CONFIG — same values as main.html
-// ======================================================
-const SUPABASE_URL = 'https://dcaeetbbufwsbpdhsnhy.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_WufbIxfaujFYDbxcQgov4A_UWAHcgKn';
-// ======================================================
+// SUPABASE_URL / SUPABASE_ANON_KEY come from config.js (shared with main.html)
 
 // persistSession/autoRefreshToken/detectSessionInUrl off: this page must
 // always act as anon, even if the same browser is logged into main.html
@@ -138,6 +135,7 @@ const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 const listEl = document.getElementById('list');
 const emptyEl = document.getElementById('empty');
 const refreshBtn = document.getElementById('refreshBtn');
+const dayWarningEl = document.getElementById('dayWarning');
 
 // ---------- Theme toggle ----------
 const themeToggle = document.getElementById('themeToggle');
@@ -157,7 +155,14 @@ let editingIds = new Set();
 const saveTimers = {}; // debounce per job
 
 async function loadJobs(){
-  const { data: pub } = await supa.from('published_day').select('job_date').eq('id', 1).single();
+  const { data: pub, error: pubError } = await supa.from('published_day').select('job_date').eq('id', 1).single();
+  if(pubError){
+    dayWarningEl.style.display = 'block';
+    dayWarningEl.style.color = 'var(--red)';
+    dayWarningEl.textContent = "Couldn't confirm today's published day (" + pubError.message + ') — showing local date, tell Horatio if this looks wrong.';
+  } else {
+    dayWarningEl.style.display = 'none';
+  }
   const day = pub ? pub.job_date : new Date().toISOString().slice(0,10); // falls back to real today if not migrated yet
   const { data, error } = await supa.from('trolley_jobs').select('*').eq('job_date', day).order('sort_order', { ascending: true });
   if(error){

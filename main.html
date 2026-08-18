@@ -7,6 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <title>Core Counting — Main</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
 <style>
   :root{
     --bg:#0a0908; --bg-elev:#0f0d0a; --panel:#16130f; --panel2:#1c1811; --line:#2a231a; --line2:#3a3122;
@@ -307,13 +308,7 @@
 </div>
 
 <script>
-// ======================================================
-// CONFIG
-// ======================================================
-const SUPABASE_URL = 'https://dcaeetbbufwsbpdhsnhy.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_WufbIxfaujFYDbxcQgov4A_UWAHcgKn';
-// ======================================================
-
+// SUPABASE_URL / SUPABASE_ANON_KEY come from config.js
 const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ---------- Theme toggle ----------
@@ -745,9 +740,13 @@ async function loadJobs(){
   updateStatsBar();
 }
 
+// planned_qty is in effective (mould) units, so "short" must compare against
+// effective_qty, not raw counted_total — for doubles jobs those differ 2x.
+function isShort(j){ return j.planned_qty != null && (j.effective_qty ?? 0) < j.planned_qty; }
+
 function updateStatsBar(){
   const totalTonnage = jobs.reduce((sum, r) => sum + (r.tonnage || 0), 0);
-  const shortJobs = jobs.filter(r => r.planned_qty != null && (r.counted_total ?? 0) < r.planned_qty);
+  const shortJobs = jobs.filter(isShort);
   const dippingJobs = jobs.filter(r => r.needs_dipping);
   const makingJobs = jobs.filter(r => r.still_making);
   summaryStats.innerHTML = `
@@ -795,9 +794,8 @@ function renderJobs(){
 function renderJobsMobile(){
   jobList.innerHTML = jobs.map(j=>{
     const planned = j.planned_qty ?? null;
-    const counted = j.counted_total ?? 0;
     const moulds = Math.round(j.effective_qty ?? 0);
-    const short = planned !== null && counted < planned;
+    const short = planned !== null && moulds < planned;
     const editing = editingIds.has(j.id);
     return `
       <div class="jobRow" data-id="${j.id}">
@@ -809,7 +807,7 @@ function renderJobsMobile(){
             ${j.still_making ? '<span class="badge badge-warn">MAKING</span>' : ''}
           </div>
           <div class="jrStats">
-            <span class="jrCount ${short ? 'jrShort' : 'jrOk'}">${counted}/${moulds}</span>
+            <span class="jrCount ${short ? 'jrShort' : 'jrOk'}">${moulds}/${planned ?? '—'}</span>
             <span class="jrTon">${(j.tonnage||0).toFixed(2)}t</span>
             <label class="jrDip"><input type="checkbox" class="dippingCheckbox" data-id="${j.id}" ${j.needs_dipping ? 'checked':''}> dip</label>
           </div>
@@ -851,7 +849,7 @@ function renderJobsMobile(){
 
 function matchesDesktopFilter(j){
   if(desktopFilter === 'short'){
-    if(!(j.planned_qty != null && (j.counted_total ?? 0) < j.planned_qty)) return false;
+    if(!isShort(j)) return false;
   } else if(desktopFilter === 'dipping'){
     if(!j.needs_dipping) return false;
   } else if(desktopFilter === 'trial'){
@@ -878,10 +876,9 @@ function renderJobsDesktop(){
   const visible = jobs.filter(matchesDesktopFilter);
   const rowsHtml = visible.map(j=>{
     const planned = j.planned_qty ?? null;
-    const counted = j.counted_total ?? 0;
     const moulds = Math.round(j.effective_qty ?? 0);
-    const short = planned !== null && counted < planned;
-    const pct = moulds ? Math.max(0, Math.min(100, Math.round(counted / moulds * 100))) : 0;
+    const short = planned !== null && moulds < planned;
+    const pct = planned ? Math.max(0, Math.min(100, Math.round(moulds / planned * 100))) : 0;
     const editing = editingIds.has(j.id);
     return `
       <tr class="jobRow ${short ? 'rowShort' : ''} ${j.still_making ? 'rowMaking' : ''}" data-id="${j.id}">
@@ -894,7 +891,7 @@ function renderJobsDesktop(){
         <td class="roText">${j.weight_kg ?? '—'}</td>
         <td class="roText">${planned ?? '—'}</td>
         <td>
-          <span class="jrCount ${short ? 'jrShort' : 'jrOk'}">${counted}/${moulds}</span>
+          <span class="jrCount ${short ? 'jrShort' : 'jrOk'}">${moulds}/${planned ?? '—'}</span>
           <div class="ratioBar ${short ? 'short' : ''}"><div style="width:${pct}%"></div></div>
         </td>
         <td class="roText" style="text-align:center;">${j.is_doubles ? '✓' : '—'}</td>
@@ -997,35 +994,70 @@ async function handleDippingToggle(cb){
   }
 }
 
+// Offline-safe save: failed saves persist in localStorage and auto-retry on
+// reconnect, same pattern as trolley.html's performSave/retryPendingSaves —
+// merged per job id since edits here patch one field at a time.
+const PENDING_KEY = 'coreCountingPendingJobPatches';
+function getPending(){ try{ return JSON.parse(localStorage.getItem(PENDING_KEY) || '{}'); }catch(e){ return {}; } }
+function setPendingPatch(id, patch){ const p = getPending(); p[id] = {...(p[id]||{}), ...patch}; localStorage.setItem(PENDING_KEY, JSON.stringify(p)); }
+function clearPendingPatch(id){ const p = getPending(); delete p[id]; localStorage.setItem(PENDING_KEY, JSON.stringify(p)); }
+
 function queueSave(id, field, value){
   const stateEl = jobList.querySelector(`.manageSaveState[data-savestate="${id}"]`);
   if(stateEl){ stateEl.textContent = 'unsaved…'; stateEl.className = 'manageSaveState'; }
 
   clearTimeout(saveTimers[id]);
-  saveTimers[id] = setTimeout(async ()=>{
-    const job = jobs.find(j => j.id === id);
-    if(!job) return;
-    const patch = {};
-    patch[field] = (field === 'weight_kg') ? (job[field] === '' ? null : parseFloat(job[field]))
-      : (field === 'planned_qty') ? (job[field] === '' ? null : parseInt(job[field]))
-      : job[field];
-    const { error } = await supa.from('jobs').update(patch).eq('id', id);
-    const el = jobList.querySelector(`.manageSaveState[data-savestate="${id}"]`);
-    if(el){
-      if(error){ el.textContent = 'save failed: ' + error.message; el.style.color = 'var(--red)'; }
-      else { el.textContent = 'saved'; el.className = 'manageSaveState saved'; }
-    }
-    if(!error && (field === 'weight_kg' || field === 'planned_qty' || field === 'is_doubles')){
+  saveTimers[id] = setTimeout(()=> performSave(id, field), 500);
+}
+
+async function performSave(id, field){
+  const job = jobs.find(j => j.id === id);
+  if(!job) return;
+  const patch = {};
+  patch[field] = (field === 'weight_kg') ? (job[field] === '' ? null : parseFloat(job[field]))
+    : (field === 'planned_qty') ? (job[field] === '' ? null : parseInt(job[field]))
+    : job[field];
+
+  const { error } = await supa.from('jobs').update(patch).eq('id', id);
+  const el = jobList.querySelector(`.manageSaveState[data-savestate="${id}"]`);
+  if(error){
+    setPendingPatch(id, patch);
+    if(el){ el.textContent = 'offline — will retry: ' + error.message; el.style.color = 'var(--red)'; }
+    setTimeout(()=> retryPendingSaves(), 15000);
+  } else {
+    clearPendingPatch(id);
+    if(el){ el.textContent = 'saved'; el.className = 'manageSaveState saved'; }
+    if(field === 'weight_kg' || field === 'planned_qty' || field === 'is_doubles') refreshRowMetrics(id);
+  }
+}
+
+async function retryPendingSaves(){
+  const pending = getPending();
+  const ids = Object.keys(pending);
+  if(!ids.length) return;
+  for(const id of ids){
+    const { error } = await supa.from('jobs').update(pending[id]).eq('id', id);
+    if(!error){
+      clearPendingPatch(id);
+      const el = jobList.querySelector(`.manageSaveState[data-savestate="${id}"]`);
+      if(el){ el.textContent = 'saved'; el.className = 'manageSaveState saved'; }
       refreshRowMetrics(id);
     }
-  }, 500);
+  }
+  if(Object.keys(getPending()).length) setTimeout(()=> retryPendingSaves(), 15000);
 }
+
+window.addEventListener('online', retryPendingSaves);
 
 // Re-fetch just the computed columns for one row after an edit that affects tonnage/counts,
 // and patch the DOM in place so the open edit panel / focus isn't disturbed by a full re-render.
 async function refreshRowMetrics(id){
-  const { data } = await supa.from('job_summary').select('tonnage,counted_total,effective_qty,planned_qty').eq('id', id).single();
-  if(!data) return;
+  const { data, error } = await supa.from('job_summary').select('tonnage,counted_total,effective_qty,planned_qty').eq('id', id).single();
+  const stateEl = jobList.querySelector(`.manageSaveState[data-savestate="${id}"]`);
+  if(error || !data){
+    if(stateEl){ stateEl.textContent = 'saved — refresh to confirm totals'; stateEl.style.color = 'var(--red)'; }
+    return;
+  }
   const job = jobs.find(j => j.id === id);
   if(!job) return;
   Object.assign(job, data);
@@ -1033,17 +1065,16 @@ async function refreshRowMetrics(id){
   const row = jobList.querySelector(`.jobRow[data-id="${id}"]`);
   if(!row) return;
   const planned = job.planned_qty ?? null;
-  const counted = job.counted_total ?? 0;
   const moulds = Math.round(job.effective_qty ?? 0);
-  const short = planned !== null && counted < planned;
+  const short = planned !== null && moulds < planned;
   const countEl = row.querySelector('.jrCount');
-  if(countEl){ countEl.textContent = counted + '/' + moulds; countEl.className = 'jrCount ' + (short ? 'jrShort' : 'jrOk'); }
+  if(countEl){ countEl.textContent = moulds + '/' + (planned ?? '—'); countEl.className = 'jrCount ' + (short ? 'jrShort' : 'jrOk'); }
   const tonEl = row.querySelector('.jrTon');
   if(tonEl) tonEl.textContent = (job.tonnage||0).toFixed(2) + 't';
   const barEl = row.querySelector('.ratioBar');
   if(barEl){
     barEl.className = 'ratioBar ' + (short ? 'short' : '');
-    const pct = moulds ? Math.max(0, Math.min(100, Math.round(counted / moulds * 100))) : 0;
+    const pct = planned ? Math.max(0, Math.min(100, Math.round(moulds / planned * 100))) : 0;
     barEl.firstElementChild.style.width = pct + '%';
   }
 }
