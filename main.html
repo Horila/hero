@@ -794,6 +794,7 @@ function renderJobs(){
 function renderJobsMobile(){
   jobList.innerHTML = jobs.map(j=>{
     const planned = j.planned_qty ?? null;
+    const counted = j.counted_total ?? 0;
     const moulds = Math.round(j.effective_qty ?? 0);
     const short = planned !== null && moulds < planned;
     const editing = editingIds.has(j.id);
@@ -807,7 +808,7 @@ function renderJobsMobile(){
             ${j.still_making ? '<span class="badge badge-warn">MAKING</span>' : ''}
           </div>
           <div class="jrStats">
-            <span class="jrCount ${short ? 'jrShort' : 'jrOk'}">${moulds}/${planned ?? '—'}</span>
+            <span class="jrCount ${short ? 'jrShort' : 'jrOk'}">${counted}/${planned ?? '—'}</span>
             <span class="jrTon">${(j.tonnage||0).toFixed(2)}t</span>
             <label class="jrDip"><input type="checkbox" class="dippingCheckbox" data-id="${j.id}" ${j.needs_dipping ? 'checked':''}> dip</label>
           </div>
@@ -876,6 +877,7 @@ function renderJobsDesktop(){
   const visible = jobs.filter(matchesDesktopFilter);
   const rowsHtml = visible.map(j=>{
     const planned = j.planned_qty ?? null;
+    const counted = j.counted_total ?? 0;
     const moulds = Math.round(j.effective_qty ?? 0);
     const short = planned !== null && moulds < planned;
     const pct = planned ? Math.max(0, Math.min(100, Math.round(moulds / planned * 100))) : 0;
@@ -891,7 +893,7 @@ function renderJobsDesktop(){
         <td class="roText">${j.weight_kg ?? '—'}</td>
         <td class="roText">${planned ?? '—'}</td>
         <td>
-          <span class="jrCount ${short ? 'jrShort' : 'jrOk'}">${moulds}/${planned ?? '—'}</span>
+          <span class="jrCount ${short ? 'jrShort' : 'jrOk'}">${counted}/${planned ?? '—'}</span>
           <div class="ratioBar ${short ? 'short' : ''}"><div style="width:${pct}%"></div></div>
         </td>
         <td class="roText" style="text-align:center;">${j.is_doubles ? '✓' : '—'}</td>
@@ -1065,10 +1067,11 @@ async function refreshRowMetrics(id){
   const row = jobList.querySelector(`.jobRow[data-id="${id}"]`);
   if(!row) return;
   const planned = job.planned_qty ?? null;
+  const counted = job.counted_total ?? 0;
   const moulds = Math.round(job.effective_qty ?? 0);
   const short = planned !== null && moulds < planned;
   const countEl = row.querySelector('.jrCount');
-  if(countEl){ countEl.textContent = moulds + '/' + (planned ?? '—'); countEl.className = 'jrCount ' + (short ? 'jrShort' : 'jrOk'); }
+  if(countEl){ countEl.textContent = counted + '/' + (planned ?? '—'); countEl.className = 'jrCount ' + (short ? 'jrShort' : 'jrOk'); }
   const tonEl = row.querySelector('.jrTon');
   if(tonEl) tonEl.textContent = (job.tonnage||0).toFixed(2) + 't';
   const barEl = row.querySelector('.ratioBar');
