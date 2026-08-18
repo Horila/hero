@@ -762,7 +762,7 @@ function tonnageUntilGradeChange(sortedJobs){
 }
 
 function updateStatsBar(){
-  const totalTonnage = jobs.reduce((sum, r) => sum + (r.tonnage || 0), 0);
+  const totalTonnage = jobs.filter(r => r.is_done).reduce((sum, r) => sum + (r.tonnage || 0), 0);
   const shortJobs = jobs.filter(isShort);
   const dippingJobs = jobs.filter(r => r.needs_dipping);
   const makingJobs = jobs.filter(r => r.still_making);
