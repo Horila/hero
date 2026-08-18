@@ -55,6 +55,20 @@ create table if not exists counts (
 
 create unique index if not exists counts_job_id_idx on counts (job_id);
 
+-- ---------- Published day (singleton) ----------
+-- Which job_date trolley.html currently shows. Horatio picks any day
+-- in main.html's date picker and hits "Push Live" to change it, so
+-- trolley boys aren't locked to the real today.
+create table if not exists published_day (
+  id smallint primary key default 1 check (id = 1),
+  job_date date not null default current_date,
+  updated_at timestamptz not null default now()
+);
+
+insert into published_day (id, job_date)
+values (1, current_date)
+on conflict (id) do nothing;
+
 -- ---------- Dipping memory (by item number) ----------
 -- Ticking dipping on for a job remembers its item_number here; future
 -- jobs with the same item_number auto-tick on save. Only ever learns
@@ -78,6 +92,7 @@ select
   j.mingzhi_hansberg_no,
   j.job_date,
   j.needs_dipping,
+  j.sort_order,
   coalesce(c.group_a_cores, 0) as group_a_cores,
   coalesce(c.group_a_trolleys, 0) as group_a_trolleys,
   coalesce(c.group_b_cores, 0) as group_b_cores,
@@ -148,10 +163,12 @@ order by j.job_date desc, j.sort_order asc;
 alter table jobs enable row level security;
 alter table counts enable row level security;
 alter table dip_items enable row level security;
+alter table published_day enable row level security;
 
 revoke all on jobs from anon, authenticated;
 revoke all on counts from anon, authenticated;
 revoke all on dip_items from anon, authenticated;
+revoke all on published_day from anon, authenticated;
 
 -- jobs: only your logged-in account can touch this table at all
 drop policy if exists "authenticated full access to jobs" on jobs;
@@ -191,6 +208,21 @@ create policy "authenticated full access to dip_items"
   with check (auth.role() = 'authenticated');
 
 grant select, insert, update, delete on dip_items to authenticated;
+
+-- published_day: anyone can read which day is live, only you can change it
+drop policy if exists "anyone can read published_day" on published_day;
+create policy "anyone can read published_day"
+  on published_day for select
+  using (true);
+
+drop policy if exists "authenticated can update published_day" on published_day;
+create policy "authenticated can update published_day"
+  on published_day for update
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
+
+grant select on published_day to anon, authenticated;
+grant update on published_day to authenticated;
 
 -- Views: trolley_jobs is public (anon), job_summary is yours only
 grant select on trolley_jobs to anon;
