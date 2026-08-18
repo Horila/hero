@@ -141,8 +141,9 @@ let jobs = [];
 const saveTimers = {}; // debounce per job
 
 async function loadJobs(){
-  const today = new Date().toISOString().slice(0,10);
-  const { data, error } = await supa.from('trolley_jobs').select('*').eq('job_date', today);
+  const { data: pub } = await supa.from('published_day').select('job_date').eq('id', 1).single();
+  const day = pub ? pub.job_date : new Date().toISOString().slice(0,10); // falls back to real today if not migrated yet
+  const { data, error } = await supa.from('trolley_jobs').select('*').eq('job_date', day);
   if(error){
     listEl.innerHTML = '<div style="color:var(--red);font-family:var(--mono);font-size:12px;">Error loading jobs: '+esc(error.message)+'</div>';
     return;

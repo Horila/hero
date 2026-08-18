@@ -55,9 +55,15 @@
   #themeToggle{width:auto;padding:7px 11px;font-size:11px;font-family:var(--mono);}
 
   /* ---- Date chip (small dropdown-style date picker, top of page) ---- */
-  .dateChip{display:inline-flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:5px 10px 5px 12px;margin-bottom:14px;}
+  .dateRow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+  .dateChip{display:inline-flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:5px 10px 5px 12px;}
   .dateChip label{margin:0;font-size:9.5px;white-space:nowrap;}
   .dateChip input{width:auto;padding:3px 6px;margin:0;border:none;background:transparent;font-size:12px;color:var(--text);}
+
+  #pushLiveBtn{width:auto;display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;font-size:11px;background:var(--panel2);}
+  #pushLiveBtn .liveDot{width:7px;height:7px;border-radius:50%;background:var(--dim2);flex-shrink:0;}
+  #pushLiveBtn.live{border-color:var(--green);color:var(--green);}
+  #pushLiveBtn.live .liveDot{background:var(--green);box-shadow:0 0 6px var(--green);}
 
   /* ---- Stat tiles (KPIs, pinned at top) ---- */
   .statRow{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px;}
@@ -186,9 +192,12 @@
   <div id="mainScreen" style="padding-top:8px;">
     <div class="subtitle" id="userEmail" style="margin-bottom:8px;"></div>
 
-    <div class="dateChip">
-      <label>DAY</label>
-      <input type="date" id="jobDatePicker">
+    <div class="dateRow">
+      <div class="dateChip">
+        <label>DAY</label>
+        <input type="date" id="jobDatePicker">
+      </div>
+      <button id="pushLiveBtn"><span class="liveDot"></span><span id="pushLiveLabel">Push Live</span></button>
     </div>
 
     <!-- KPIs at the top -->
@@ -297,6 +306,8 @@ const logoutBtn = document.getElementById('logoutBtn');
 const userEmail = document.getElementById('userEmail');
 
 const jobDatePicker = document.getElementById('jobDatePicker');
+const pushLiveBtn = document.getElementById('pushLiveBtn');
+const pushLiveLabel = document.getElementById('pushLiveLabel');
 const summaryStats = document.getElementById('summaryStats');
 const gradeTable = document.getElementById('gradeTable');
 const refreshBtn = document.getElementById('refreshBtn');
@@ -316,8 +327,31 @@ const dipMemoryList = document.getElementById('dipMemoryList');
 const dipMemoryEmpty = document.getElementById('dipMemoryEmpty');
 
 jobDatePicker.value = new Date().toISOString().slice(0,10);
-jobDatePicker.addEventListener('change', loadJobs);
-refreshBtn.addEventListener('click', ()=>{ loadJobs(); loadDipMemory(); });
+jobDatePicker.addEventListener('change', ()=>{ loadJobs(); updatePushLiveButton(); });
+refreshBtn.addEventListener('click', ()=>{ loadJobs(); loadDipMemory(); loadPublishedDay(); });
+
+let publishedDay = null;
+
+async function loadPublishedDay(){
+  const { data, error } = await supa.from('published_day').select('job_date').eq('id', 1).single();
+  publishedDay = error ? null : data.job_date;
+  updatePushLiveButton();
+}
+
+function updatePushLiveButton(){
+  const isLive = publishedDay && jobDatePicker.value === publishedDay;
+  pushLiveBtn.classList.toggle('live', isLive);
+  pushLiveLabel.textContent = isLive ? 'Live' : 'Push Live';
+}
+
+pushLiveBtn.addEventListener('click', async ()=>{
+  const selected = jobDatePicker.value || new Date().toISOString().slice(0,10);
+  pushLiveLabel.textContent = 'Pushing…';
+  const { error } = await supa.from('published_day').update({ job_date: selected, updated_at: new Date().toISOString() }).eq('id', 1);
+  if(error){ alert('Failed to push live: ' + error.message); updatePushLiveButton(); return; }
+  publishedDay = selected;
+  updatePushLiveButton();
+});
 
 let extractedJobs = [];
 let jobs = [];
@@ -334,6 +368,7 @@ async function checkSession(){
     userEmail.textContent = session.user.email;
     loadJobs();
     loadDipMemory();
+    loadPublishedDay();
   } else {
     loginScreen.style.display = 'block';
     mainScreen.style.display = 'none';
