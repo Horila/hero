@@ -166,7 +166,7 @@ revoke all on counts from anon, authenticated;
 revoke all on dip_items from anon, authenticated;
 revoke all on published_day from anon, authenticated;
 
--- jobs: only your logged-in account can touch this table at all
+-- jobs: only your logged-in account can touch this table for real work
 drop policy if exists "authenticated full access to jobs" on jobs;
 create policy "authenticated full access to jobs"
   on jobs for all
@@ -174,6 +174,22 @@ create policy "authenticated full access to jobs"
   with check (auth.role() = 'authenticated');
 
 grant select, insert, update, delete on jobs to authenticated;
+
+-- anon also needs a narrow read here: the counts policies below check a
+-- job's job_date against published_day, and that EXISTS check runs as the
+-- anon role itself, so it needs its own (very limited) read access to jobs
+-- or every anon counts write fails with "permission denied for table jobs".
+-- Scoped to today's published day, and only the two columns that check
+-- needs — trolley_jobs remains the only place anon sees fuller job detail.
+drop policy if exists "anon can read published-day jobs for counts check" on jobs;
+create policy "anon can read published-day jobs for counts check"
+  on jobs for select
+  to anon
+  using (
+    job_date = (select job_date from published_day where id = 1)
+  );
+
+grant select (id, job_date) on jobs to anon;
 
 -- counts: trolley boys (anonymous) can read/write, but never delete, and
 -- only for jobs on the currently published day — the anon key is public
