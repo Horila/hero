@@ -544,15 +544,67 @@ saveAllBtn.addEventListener('click', async ()=>{
     setStatus('Some rows skipped — AM number is required to save', 'err');
   }
 
-  const { error } = await supa.from('jobs').upsert(rows, { onConflict: 'am_number,job_date' });
+  const { data: savedRows, error } = await supa.from('jobs').upsert(rows, { onConflict: 'am_number,job_date' }).select('id, am_number, job_date');
   if(error){ setStatus('Save failed: ' + error.message, 'err'); return; }
 
-  setStatus(rows.length + ' job(s) saved', 'ok');
+  const synced = await syncCountsFromPreviousDay(savedRows || []);
+  setStatus(rows.length + ' job(s) saved' + (synced ? ` — ${synced} count(s) carried over from a previous day` : ''), 'ok');
   extractedJobs = [];
   reviewList.innerHTML = '';
   saveAllBtn.style.display = 'none';
   loadJobs();
 });
+
+// If a saved job's am_number was already counted on an earlier job_date, carry that count
+// forward automatically — the boys shouldn't have to re-count a job that's just continuing
+// from the day before. Never touches a job that already has a counts row today (real trolley
+// input always wins over a carried-forward guess).
+async function syncCountsFromPreviousDay(savedRows){
+  const amNumbers = [...new Set(savedRows.map(r => r.am_number).filter(Boolean))];
+  if(!amNumbers.length) return 0;
+  const jobDate = savedRows[0].job_date;
+
+  const { data: todayCounts } = await supa.from('counts').select('job_id').in('job_id', savedRows.map(r => r.id));
+  const alreadyCounted = new Set((todayCounts || []).map(c => c.job_id));
+  const targets = savedRows.filter(r => !alreadyCounted.has(r.id));
+  if(!targets.length) return 0;
+
+  const { data: priorJobs } = await supa.from('jobs')
+    .select('id, am_number, job_date')
+    .in('am_number', targets.map(r => r.am_number))
+    .lt('job_date', jobDate)
+    .order('job_date', { ascending: false });
+  if(!priorJobs || !priorJobs.length) return 0;
+
+  const mostRecentPriorIdByAm = {};
+  priorJobs.forEach(j => { if(!(j.am_number in mostRecentPriorIdByAm)) mostRecentPriorIdByAm[j.am_number] = j.id; });
+
+  const priorIds = Object.values(mostRecentPriorIdByAm);
+  const { data: priorCounts } = await supa.from('counts')
+    .select('job_id, group_a_cores, group_a_trolleys, group_b_cores, group_b_trolleys, manual_total_override, comment, still_making')
+    .in('job_id', priorIds);
+  const priorCountByJobId = Object.fromEntries((priorCounts || []).map(c => [c.job_id, c]));
+
+  const newRows = targets.map(r => {
+    const priorId = mostRecentPriorIdByAm[r.am_number];
+    const prior = priorId && priorCountByJobId[priorId];
+    if(!prior) return null;
+    return {
+      job_id: r.id,
+      group_a_cores: prior.group_a_cores,
+      group_a_trolleys: prior.group_a_trolleys,
+      group_b_cores: prior.group_b_cores,
+      group_b_trolleys: prior.group_b_trolleys,
+      manual_total_override: prior.manual_total_override,
+      comment: prior.comment,
+      still_making: prior.still_making
+    };
+  }).filter(Boolean);
+  if(!newRows.length) return 0;
+
+  const { error } = await supa.from('counts').insert(newRows);
+  return error ? 0 : newRows.length;
+}
 
 // ---------- Job list: merged Manage + Summary, compact rows ----------
 async function loadJobs(){

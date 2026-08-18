@@ -198,7 +198,9 @@ create policy "anon can update counts"
   with check (true);
 
 grant select, insert, update on counts to anon;
-grant select on counts to authenticated;
+-- authenticated needs insert too: main.html carries a job's counts forward
+-- automatically when the same am_number reappears on a later job_date.
+grant select, insert on counts to authenticated;
 
 -- dip_items: your logged-in account only
 drop policy if exists "authenticated full access to dip_items" on dip_items;
