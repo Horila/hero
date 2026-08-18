@@ -744,19 +744,11 @@ async function loadJobs(){
 // effective_qty (halved) is for tonnage math only, not this comparison.
 function isShort(j){ return j.planned_qty != null && (j.counted_total ?? 0) < j.planned_qty; }
 
-// Tonnage math mirrors job_summary's server-side formula: doubles halve the
-// core count before multiplying by weight, since a mould's weight counts
-// once regardless of how many cores share it.
-function plannedTonnage(j){
-  const qty = j.is_doubles ? (j.planned_qty ?? 0) / 2 : (j.planned_qty ?? 0);
-  return qty * (j.weight_kg ?? 0) / 1000;
-}
-
-// Sum of remaining tonnage (planned - counted, floored at 0) for the run of
-// consecutive same-grade jobs starting at the first not-done job in sort
-// order — i.e. how much of the CURRENT grade is left before the next job in
-// sequence switches to a different grade. Done jobs are skipped entirely
-// (finished work, not part of the current run).
+// Sum of counted tonnage for the run of consecutive same-grade jobs starting
+// at the first not-done job in sort order — i.e. total tonnage of the
+// CURRENT grade run before the next job in sequence switches to a different
+// grade. Done jobs are skipped entirely (finished work, not part of the
+// current run).
 function tonnageUntilGradeChange(sortedJobs){
   const active = sortedJobs.filter(j => !j.is_done);
   if(!active.length) return 0;
@@ -764,7 +756,7 @@ function tonnageUntilGradeChange(sortedJobs){
   let total = 0;
   for(const j of active){
     if(j.grade !== grade) break;
-    total += Math.max(0, plannedTonnage(j) - (j.tonnage || 0));
+    total += j.tonnage || 0;
   }
   return total;
 }
