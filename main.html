@@ -52,7 +52,7 @@
   body.light .topBar{background:rgba(245,241,232,.85);}
   .topBar .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:14px;letter-spacing:-.01em;}
   .topBar .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--amber);box-shadow:0 0 8px var(--amber);}
-  #themeToggle{width:auto;padding:7px 11px;font-size:11px;font-family:var(--mono);}
+  #themeToggle, #viewToggle{width:auto;padding:7px 11px;font-size:11px;font-family:var(--mono);}
 
   /* ---- Date chip (small dropdown-style date picker, top of page) ---- */
   .dateRow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
@@ -152,12 +152,57 @@
   #radioBox.collapsed .radioBody{display:none;}
   #radioPlayBtn{width:100%;margin-top:6px;padding:8px;font-size:13px;}
   #radioUrlInput{font-size:11px;padding:6px;margin-top:0;}
+
+  /* ---- Desktop dashboard view (toggled via body.desktop-view) ---- */
+  .desktopToolbar{display:none;}
+  body.desktop-view #app{max-width:1400px;}
+  body.desktop-view .statRow{grid-template-columns:repeat(5,1fr);}
+  .statTile.stillMaking{display:none;}
+  body.desktop-view .statTile.stillMaking{display:block;}
+  body.desktop-view .desktopToolbar{display:flex;gap:10px;align-items:center;padding:10px 12px;}
+  .desktopToolbar input{flex:1;width:auto;margin:0;}
+  .filterChips{display:flex;gap:6px;flex-wrap:wrap;}
+  .chip{width:auto;padding:5px 10px;font-size:11px;background:var(--panel2);border:1px solid var(--line);border-radius:999px;color:var(--dim);}
+  .chip.active{background:var(--amber-bg);border-color:var(--amber-dim);color:var(--amber);}
+
+  .mainSplit{display:block;}
+  body.desktop-view .mainSplit{display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start;}
+  .sidebarCol{display:none;}
+  body.desktop-view .sidebarCol{display:block;position:sticky;top:70px;}
+  .alertPanel h3{font-size:10.5px;margin:0 0 8px 0;font-family:var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:.03em;}
+  .alertRow{display:flex;justify-content:space-between;gap:8px;padding:5px 0;font-family:var(--mono);font-size:11.5px;border-bottom:1px solid var(--line);cursor:pointer;}
+  .alertRow:last-child{border-bottom:none;}
+  .alertRow:hover{color:var(--amber);}
+  .alertEmpty{font-family:var(--mono);font-size:11px;color:var(--dim2);padding:2px 0;}
+
+  .desktopTable{width:100%;border-collapse:collapse;font-size:12px;}
+  .desktopTable th,.desktopTable td{padding:7px 8px;border-bottom:1px solid var(--line);font-family:var(--mono);white-space:nowrap;text-align:left;}
+  .desktopTable th{position:sticky;top:0;background:var(--panel);color:var(--dim);font-size:9.5px;text-transform:uppercase;letter-spacing:.03em;}
+  .desktopTable td.amCell, .desktopTable th.amCell{position:sticky;left:0;background:var(--panel2);z-index:1;}
+  /* border-left on <tr> itself is unreliable with border-collapse — accent the first cell instead */
+  .desktopTable tr.jobRow > td:first-child{border-left:3px solid transparent;}
+  .desktopTable tr.jobRow.rowShort > td:first-child{border-left-color:var(--red);}
+  .desktopTable tr.jobRow.rowMaking > td:first-child{border-left-color:var(--amber);border-left-style:dashed;}
+  .desktopTable tr.jobRow.dragging{transform:none;box-shadow:none;background:var(--amber-bg);}
+  .desktopTable tr.jobRow.rowFlash{animation:rowFlash 1.2s ease;}
+  @keyframes rowFlash{ 0%{background:var(--amber-bg);} 100%{background:transparent;} }
+  .desktopTable .dragGrip{color:var(--dim2);cursor:grab;text-align:center;}
+  .desktopTable input{padding:4px 6px;font-size:12px;margin:0;min-width:60px;}
+  .desktopTable .roText{color:var(--text);}
+  .desktopTable .commentCell{max-width:180px;overflow:hidden;text-overflow:ellipsis;color:var(--dim);font-style:italic;}
+  .desktopTable .editDrawerRow td{background:var(--bg-elev);padding:14px;}
+  .ratioBar{width:40px;height:5px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:3px;}
+  .ratioBar > div{height:100%;background:var(--green);}
+  .ratioBar.short > div{background:var(--red);}
 </style>
 </head>
 <body>
 <div class="topBar">
   <div class="brand"><span class="dot"></span>Core Counting</div>
-  <button id="themeToggle">🌙 Dark</button>
+  <div style="display:flex;gap:8px;">
+    <button id="viewToggle">🖥 Desktop</button>
+    <button id="themeToggle">🌙 Dark</button>
+  </div>
 </div>
 
 <div id="radioBox">
@@ -211,9 +256,26 @@
       <div class="tableScroll" style="margin-top:8px;"><table id="gradeTable"></table></div>
     </div>
 
-    <!-- Job list: compact rows, edit button each, press-and-hold to reorder -->
-    <div id="jobList"></div>
-    <div id="jobsEmpty" style="display:none;">No jobs for this day.</div>
+    <!-- Desktop-only: search + quick filters over today's jobs -->
+    <div class="card desktopToolbar" id="desktopToolbar">
+      <input type="text" id="jobSearch" placeholder="Search AM#, grade, customer, item#…">
+      <div class="filterChips" id="filterChips">
+        <button class="chip active" data-filter="all" type="button">All</button>
+        <button class="chip" data-filter="short" type="button">Short</button>
+        <button class="chip" data-filter="dipping" type="button">Dipping due</button>
+        <button class="chip" data-filter="trial" type="button">Trial</button>
+        <button class="chip" data-filter="making" type="button">Making</button>
+      </div>
+    </div>
+
+    <div class="mainSplit" id="mainSplit">
+      <div class="mainCol">
+        <!-- Job list: compact rows (mobile) or dense table (desktop), press-and-hold to reorder -->
+        <div id="jobList"></div>
+        <div id="jobsEmpty" style="display:none;">No jobs for this day.</div>
+      </div>
+      <div class="card sidebarCol" id="desktopSidebar"></div>
+    </div>
 
     <!-- Scan / upload / manual add — bottom of page, under all jobs -->
     <div class="card" style="margin-top:18px;">
@@ -267,6 +329,21 @@ themeToggle.addEventListener('click', ()=>{
   applyTheme(next);
 });
 
+// ---------- View toggle (mobile / desktop dashboard) ----------
+const viewToggle = document.getElementById('viewToggle');
+function applyView(view){
+  document.body.classList.toggle('desktop-view', view === 'desktop');
+  viewToggle.textContent = view === 'desktop' ? '📱 Mobile' : '🖥 Desktop';
+}
+applyView(localStorage.getItem('coreCountingView') || 'mobile');
+viewToggle.addEventListener('click', ()=>{
+  const next = document.body.classList.contains('desktop-view') ? 'mobile' : 'desktop';
+  localStorage.setItem('coreCountingView', next);
+  applyView(next);
+  renderJobs();
+  updateStatsBar();
+});
+
 // ---------- Radio ----------
 const radioBox = document.getElementById('radioBox');
 const radioCollapseBtn = document.getElementById('radioCollapseBtn');
@@ -313,6 +390,43 @@ const gradeTable = document.getElementById('gradeTable');
 const refreshBtn = document.getElementById('refreshBtn');
 const jobList = document.getElementById('jobList');
 const jobsEmpty = document.getElementById('jobsEmpty');
+const jobSearchInput = document.getElementById('jobSearch');
+const filterChips = document.getElementById('filterChips');
+const desktopSidebar = document.getElementById('desktopSidebar');
+let desktopFilter = 'all';
+let desktopSearch = '';
+
+jobSearchInput.addEventListener('input', ()=>{
+  desktopSearch = jobSearchInput.value.trim().toLowerCase();
+  renderJobs();
+});
+
+filterChips.addEventListener('click', (e)=>{
+  const chip = e.target.closest('.chip');
+  if(!chip) return;
+  desktopFilter = chip.dataset.filter;
+  [...filterChips.children].forEach(c => c.classList.toggle('active', c === chip));
+  renderJobs();
+});
+
+// Sidebar alert rows jump to their job in the table. If a filter/search is currently
+// hiding it, clear that first so the row actually exists in the DOM to scroll to.
+desktopSidebar.addEventListener('click', (e)=>{
+  const row = e.target.closest('.alertRow');
+  if(!row) return;
+  const id = row.dataset.jump;
+  if(desktopFilter !== 'all' || desktopSearch){
+    desktopFilter = 'all'; desktopSearch = '';
+    jobSearchInput.value = '';
+    [...filterChips.children].forEach(c => c.classList.toggle('active', c.dataset.filter === 'all'));
+    renderJobs();
+  }
+  const target = jobList.querySelector(`.jobRow[data-id="${id}"]`);
+  if(!target) return;
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  target.classList.add('rowFlash');
+  setTimeout(()=> target.classList.remove('rowFlash'), 1200);
+});
 
 const fileInput = document.getElementById('fileInput');
 const fileInputUpload = document.getElementById('fileInputUpload');
@@ -620,13 +734,15 @@ async function loadJobs(){
 
 function updateStatsBar(){
   const totalTonnage = jobs.reduce((sum, r) => sum + (r.tonnage || 0), 0);
-  const shortCount = jobs.filter(r => r.planned_qty != null && (r.counted_total ?? 0) < r.planned_qty).length;
-  const dippingCount = jobs.filter(r => r.needs_dipping).length;
+  const shortJobs = jobs.filter(r => r.planned_qty != null && (r.counted_total ?? 0) < r.planned_qty);
+  const dippingJobs = jobs.filter(r => r.needs_dipping);
+  const makingJobs = jobs.filter(r => r.still_making);
   summaryStats.innerHTML = `
     <div class="statTile neutral"><div class="num">${jobs.length}</div><div class="lbl">Jobs today</div></div>
     <div class="statTile neutral"><div class="num">${totalTonnage.toFixed(1)}t</div><div class="lbl">Total tonnage</div></div>
-    <div class="statTile ${shortCount ? 'warn' : 'ok'}"><div class="num">${shortCount}</div><div class="lbl">Short of plan</div></div>
-    <div class="statTile ${dippingCount ? 'warn' : 'ok'}"><div class="num">${dippingCount}</div><div class="lbl">Dipping due</div></div>
+    <div class="statTile ${shortJobs.length ? 'warn' : 'ok'}"><div class="num">${shortJobs.length}</div><div class="lbl">Short of plan</div></div>
+    <div class="statTile ${dippingJobs.length ? 'warn' : 'ok'}"><div class="num">${dippingJobs.length}</div><div class="lbl">Dipping due</div></div>
+    <div class="statTile stillMaking ${makingJobs.length ? 'warn' : 'ok'}"><div class="num">${makingJobs.length}</div><div class="lbl">Still making</div></div>
   `;
 
   const gradeTotals = {};
@@ -636,6 +752,20 @@ function updateStatsBar(){
   });
   gradeTable.innerHTML = '<tr><th>Grade</th><th>Tonnage</th></tr>' +
     Object.entries(gradeTotals).map(([g,t])=>`<tr><td>${esc(g)}</td><td class="gradeTotal">${t.toFixed(2)} t</td></tr>`).join('');
+
+  renderDesktopSidebar(shortJobs, dippingJobs, makingJobs);
+}
+
+// Desktop-only alert panels — hidden via CSS on mobile, but cheap enough to always keep current.
+function renderDesktopSidebar(shortJobs, dippingJobs, makingJobs){
+  const list = (items, emptyMsg) => items.length
+    ? items.map(j => `<div class="alertRow" data-jump="${j.id}"><span>${esc(j.am_number)}</span><span>${esc(j.grade) || '—'}</span></div>`).join('')
+    : `<div class="alertEmpty">${emptyMsg}</div>`;
+  desktopSidebar.innerHTML = `
+    <div class="alertPanel"><h3>Short of plan</h3>${list(shortJobs, 'None — all on target')}</div>
+    <div class="alertPanel" style="margin-top:14px;"><h3>Dipping due</h3>${list(dippingJobs, 'None')}</div>
+    <div class="alertPanel" style="margin-top:14px;"><h3>Still making</h3>${list(makingJobs, 'None')}</div>
+  `;
 }
 
 function renderJobs(){
@@ -645,7 +775,11 @@ function renderJobs(){
     return;
   }
   jobsEmpty.style.display = 'none';
+  if(document.body.classList.contains('desktop-view')) renderJobsDesktop();
+  else renderJobsMobile();
+}
 
+function renderJobsMobile(){
   jobList.innerHTML = jobs.map(j=>{
     const planned = j.planned_qty ?? null;
     const counted = j.counted_total ?? 0;
@@ -700,6 +834,87 @@ function renderJobs(){
         </div>` : ''}
       </div>`;
   }).join('');
+}
+
+function matchesDesktopFilter(j){
+  if(desktopFilter === 'short'){
+    if(!(j.planned_qty != null && (j.counted_total ?? 0) < j.planned_qty)) return false;
+  } else if(desktopFilter === 'dipping'){
+    if(!j.needs_dipping) return false;
+  } else if(desktopFilter === 'trial'){
+    if(!j.is_trial) return false;
+  } else if(desktopFilter === 'making'){
+    if(!j.still_making) return false;
+  }
+  if(desktopSearch){
+    const hay = [j.am_number, j.grade, j.customer_name, j.item_number].filter(Boolean).join(' ').toLowerCase();
+    if(!hay.includes(desktopSearch)) return false;
+  }
+  return true;
+}
+
+// Desktop dashboard: a dense table instead of the mobile card stack. Reuses the mobile view's
+// class names (jobRow, jrCount, jrTon, editToggleBtn, deleteJobBtn, dippingCheckbox,
+// manageSaveState/data-savestate) and the same data-id/data-f attribute contract on every
+// input/checkbox, so the delegated listeners, queueSave(), refreshRowMetrics(), the dip-toggle
+// handler and the press-and-hold drag/reorder code all work on it completely unchanged.
+function renderJobsDesktop(){
+  const visible = jobs.filter(matchesDesktopFilter);
+  const rowsHtml = visible.map(j=>{
+    const planned = j.planned_qty ?? null;
+    const counted = j.counted_total ?? 0;
+    const moulds = Math.round(j.effective_qty ?? 0);
+    const short = planned !== null && counted < planned;
+    const pct = moulds ? Math.max(0, Math.min(100, Math.round(counted / moulds * 100))) : 0;
+    const editing = editingIds.has(j.id);
+    return `
+      <tr class="jobRow ${short ? 'rowShort' : ''} ${j.still_making ? 'rowMaking' : ''}" data-id="${j.id}">
+        <td class="dragGrip">⋮⋮</td>
+        <td class="amCell roText">${esc(j.am_number)}</td>
+        <td><input data-id="${j.id}" data-f="grade" value="${esc(j.grade)}"></td>
+        <td class="roText">${esc(j.item_number) || '—'}</td>
+        <td><input data-id="${j.id}" data-f="customer_name" value="${esc(j.customer_name)}"></td>
+        <td><input data-id="${j.id}" data-f="status" value="${esc(j.status)}"></td>
+        <td>${j.is_trial ? '<span class="badge badge-trial">TRIAL</span>' : ''} ${j.still_making ? '<span class="badge badge-warn">MAKING</span>' : ''}</td>
+        <td class="roText">${j.weight_kg ?? '—'}</td>
+        <td><input data-id="${j.id}" data-f="planned_qty" type="number" value="${esc(j.planned_qty)}"></td>
+        <td>
+          <span class="jrCount ${short ? 'jrShort' : 'jrOk'}">${counted}/${moulds}</span>
+          <div class="ratioBar ${short ? 'short' : ''}"><div style="width:${pct}%"></div></div>
+        </td>
+        <td style="text-align:center;"><input type="checkbox" data-id="${j.id}" data-f="is_doubles" ${j.is_doubles ? 'checked' : ''}></td>
+        <td class="jrTon">${(j.tonnage||0).toFixed(2)}t</td>
+        <td style="text-align:center;"><input type="checkbox" class="dippingCheckbox" data-id="${j.id}" ${j.needs_dipping ? 'checked' : ''}></td>
+        <td class="commentCell" title="${esc(j.comment)}">${j.comment ? esc(j.comment) : ''}</td>
+        <td style="text-align:center;"><button class="editToggleBtn" data-id="${j.id}" style="width:auto;padding:3px 8px;">${editing ? '▾' : '▸'}</button></td>
+      </tr>
+      ${editing ? `
+      <tr class="editDrawerRow" data-id="${j.id}">
+        <td colspan="15"><div class="editPanel">
+          <div class="fieldRow" style="grid-template-columns:repeat(4,1fr);">
+            <div><label>AM NUMBER</label><input data-id="${j.id}" data-f="am_number" value="${esc(j.am_number)}"></div>
+            <div><label>ITEM NUMBER</label><input data-id="${j.id}" data-f="item_number" value="${esc(j.item_number)}"></div>
+            <div><label>WEIGHT PER CORE/MOULD (KG)</label><input data-id="${j.id}" data-f="weight_kg" type="number" step="any" value="${esc(j.weight_kg)}"></div>
+            <div><label>MINGZHI NO.</label><input data-id="${j.id}" data-f="mingzhi_hansberg_no" value="${esc(j.mingzhi_hansberg_no)}"></div>
+          </div>
+          <div class="checkboxRow">
+            <input type="checkbox" data-id="${j.id}" data-f="is_trial" id="dTrial${j.id}" ${j.is_trial ? 'checked' : ''}>
+            <label for="dTrial${j.id}" style="font-size:12px;">Trial job</label>
+          </div>
+          ${j.comment ? `<div class="jrComment">"${esc(j.comment)}"</div>` : ''}
+          <div class="manageSaveState" data-savestate="${j.id}"></div>
+          <button class="danger deleteJobBtn" data-id="${j.id}" style="margin-top:10px;width:auto;">Delete job</button>
+        </div></td>
+      </tr>` : ''}`;
+  }).join('');
+
+  jobList.innerHTML = `<div class="tableScroll"><table class="desktopTable">
+    <thead><tr>
+      <th></th><th class="amCell">AM #</th><th>Grade</th><th>Item #</th><th>Customer</th><th>Status</th><th>Flags</th>
+      <th>Wt/kg</th><th>Planned</th><th>Counted</th><th>Dbl</th><th>Tonnage</th><th>Dip</th><th>Comment</th><th></th>
+    </tr></thead>
+    <tbody>${rowsHtml}</tbody>
+  </table></div>`;
 }
 
 // Delegated listeners — bound once, never re-bound on render.
@@ -803,11 +1018,20 @@ async function refreshRowMetrics(id){
   if(countEl){ countEl.textContent = counted + '/' + moulds; countEl.className = 'jrCount ' + (short ? 'jrShort' : 'jrOk'); }
   const tonEl = row.querySelector('.jrTon');
   if(tonEl) tonEl.textContent = (job.tonnage||0).toFixed(2) + 't';
+  const barEl = row.querySelector('.ratioBar');
+  if(barEl){
+    barEl.className = 'ratioBar ' + (short ? 'short' : '');
+    const pct = moulds ? Math.max(0, Math.min(100, Math.round(counted / moulds * 100))) : 0;
+    barEl.firstElementChild.style.width = pct + '%';
+  }
 }
 
 // ---------- Press-and-hold reorder ----------
 jobList.addEventListener('pointerdown', (e)=>{
   if(e.target.closest('button, input, select, textarea, a, label')) return;
+  // Desktop table rows only line up with the `jobs` array indices swapAdjacent() relies on
+  // when nothing is filtered out — reordering while filtered would swap the wrong rows.
+  if(document.body.classList.contains('desktop-view') && (desktopFilter !== 'all' || desktopSearch)) return;
   const row = e.target.closest('.jobRow');
   if(!row) return;
   startDrag(row, e);
