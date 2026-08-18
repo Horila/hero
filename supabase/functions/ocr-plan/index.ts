@@ -51,6 +51,29 @@ false. If this ratio isn't visible for a row, default is_doubles to false
 Return ONLY a raw JSON array. No commentary, no explanation — the response
 body must be valid JSON and nothing else.`;
 
+// Anyone holding the public anon key can reach this function directly (it's
+// visible in main.html's source on the public GH Pages site), independent of
+// Supabase's JWT verification setting — an anon-key JWT still passes that
+// check. Decode the token's role claim ourselves (no signature check needed,
+// the gateway already verified it) so only Horatio's logged-in session can
+// trigger a Gemini call and burn the free-tier quota.
+function callerRole(req: Request): string | null {
+  const auth = req.headers.get("authorization") || "";
+  const token = auth.replace(/^Bearer\s+/i, "");
+  const payload = token.split(".")[1];
+  if (!payload) return null;
+  try {
+    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    return JSON.parse(json).role ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Base64 for an 8MB photo — plenty for a phone snap of a plan screen, and a
+// cap on how much an abusive caller can push through to Gemini per request.
+const MAX_IMAGE_BASE64_LENGTH = 8 * 1024 * 1024 * 4 / 3;
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: CORS_HEADERS });
@@ -63,12 +86,26 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  if (callerRole(req) !== "authenticated") {
+    return new Response(JSON.stringify({ error: "authenticated caller required" }), {
+      status: 403,
+      headers: { ...CORS_HEADERS, "content-type": "application/json" },
+    });
+  }
+
   try {
     const { imageBase64, mediaType } = await req.json();
 
     if (!imageBase64) {
       return new Response(JSON.stringify({ error: "missing imageBase64" }), {
         status: 400,
+        headers: { ...CORS_HEADERS, "content-type": "application/json" },
+      });
+    }
+
+    if (imageBase64.length > MAX_IMAGE_BASE64_LENGTH) {
+      return new Response(JSON.stringify({ error: "image too large" }), {
+        status: 413,
         headers: { ...CORS_HEADERS, "content-type": "application/json" },
       });
     }

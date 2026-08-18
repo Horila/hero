@@ -112,48 +112,42 @@ order by j.job_date desc, j.sort_order asc;
 -- NOTE: "select j.*" freezes its column list at CREATE VIEW time —
 -- any future jobs column that should appear here needs this view
 -- dropped and recreated, not just the table altered.
+-- counted_total is computed once in the joined subquery below and reused
+-- for effective_qty/tonnage, instead of repeating the expression inline —
+-- one place to change the override/doubles logic instead of four.
 drop view if exists job_summary;
 create view job_summary as
 select
   j.*,
-  coalesce(c.comment, '') as comment,
-  coalesce(c.still_making, false) as still_making,
-  coalesce(
-    c.manual_total_override,
-    coalesce(c.group_a_cores, 0) * coalesce(c.group_a_trolleys, 0)
-    + coalesce(c.group_b_cores, 0) * coalesce(c.group_b_trolleys, 0)
-  ) as counted_total,
+  coalesce(c.comment_text, '') as comment,
+  coalesce(c.still_making_flag, false) as still_making,
+  coalesce(c.counted_total, 0) as counted_total,
   case
-    when j.is_doubles then coalesce(
-      c.manual_total_override,
-      coalesce(c.group_a_cores, 0) * coalesce(c.group_a_trolleys, 0)
-      + coalesce(c.group_b_cores, 0) * coalesce(c.group_b_trolleys, 0)
-    ) / 2.0
-    else coalesce(
-      c.manual_total_override,
-      coalesce(c.group_a_cores, 0) * coalesce(c.group_a_trolleys, 0)
-      + coalesce(c.group_b_cores, 0) * coalesce(c.group_b_trolleys, 0)
-    )
+    when j.is_doubles then coalesce(c.counted_total, 0) / 2.0
+    else coalesce(c.counted_total, 0)
   end as effective_qty,
   round(
     (
       case
-        when j.is_doubles then coalesce(
-          c.manual_total_override,
-          coalesce(c.group_a_cores, 0) * coalesce(c.group_a_trolleys, 0)
-          + coalesce(c.group_b_cores, 0) * coalesce(c.group_b_trolleys, 0)
-        ) / 2.0
-        else coalesce(
-          c.manual_total_override,
-          coalesce(c.group_a_cores, 0) * coalesce(c.group_a_trolleys, 0)
-          + coalesce(c.group_b_cores, 0) * coalesce(c.group_b_trolleys, 0)
-        )
+        when j.is_doubles then coalesce(c.counted_total, 0) / 2.0
+        else coalesce(c.counted_total, 0)
       end
     ) * coalesce(j.weight_kg, 0) / 1000.0,
     3
   ) as tonnage
 from jobs j
-left join counts c on c.job_id = j.id
+left join (
+  select
+    job_id,
+    coalesce(
+      manual_total_override,
+      coalesce(group_a_cores, 0) * coalesce(group_a_trolleys, 0)
+      + coalesce(group_b_cores, 0) * coalesce(group_b_trolleys, 0)
+    ) as counted_total,
+    still_making as still_making_flag,
+    comment as comment_text
+  from counts
+) c on c.job_id = j.id
 order by j.job_date desc, j.sort_order asc;
 
 -- ============================================================
@@ -179,21 +173,52 @@ create policy "authenticated full access to jobs"
 
 grant select, insert, update, delete on jobs to authenticated;
 
--- counts: trolley boys (anonymous) can read/write, but never delete
+-- counts: trolley boys (anonymous) can read/write, but never delete, and
+-- only for jobs on the currently published day — the anon key is public
+-- (visible in trolley.html's source), so writes are scoped to stop it being
+-- used to rewrite historical jobs' counts. authenticated (Horatio) keeps
+-- unrestricted access, including the carry-forward insert that writes counts
+-- for a new, not-yet-published day.
 drop policy if exists "anon can read counts" on counts;
 drop policy if exists "anon can insert counts" on counts;
 drop policy if exists "anon can update counts" on counts;
+drop policy if exists "anon can insert counts for published day" on counts;
+drop policy if exists "anon can update counts for published day" on counts;
+drop policy if exists "authenticated full access to counts writes" on counts;
 
 create policy "anon can read counts"
   on counts for select
   using (true);
 
-create policy "anon can insert counts"
+create policy "anon can insert counts for published day"
   on counts for insert
-  with check (true);
+  to anon
+  with check (
+    exists (
+      select 1 from jobs j, published_day p
+      where j.id = counts.job_id and p.id = 1 and j.job_date = p.job_date
+    )
+  );
 
-create policy "anon can update counts"
+create policy "anon can update counts for published day"
   on counts for update
+  to anon
+  using (
+    exists (
+      select 1 from jobs j, published_day p
+      where j.id = counts.job_id and p.id = 1 and j.job_date = p.job_date
+    )
+  )
+  with check (
+    exists (
+      select 1 from jobs j, published_day p
+      where j.id = counts.job_id and p.id = 1 and j.job_date = p.job_date
+    )
+  );
+
+create policy "authenticated full access to counts writes"
+  on counts for all
+  to authenticated
   using (true)
   with check (true);
 
