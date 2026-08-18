@@ -357,6 +357,7 @@ let extractedJobs = [];
 let jobs = [];
 let editingIds = new Set();
 let draggedId = null;
+let pendingReorderWrites = Promise.resolve();
 const saveTimers = {};
 
 // ---------- Auth ----------
@@ -555,6 +556,7 @@ saveAllBtn.addEventListener('click', async ()=>{
 
 // ---------- Job list: merged Manage + Summary, compact rows ----------
 async function loadJobs(){
+  await pendingReorderWrites; // let in-flight sort_order writes land first, else stale order re-fetched — see swapAdjacent
   const jobDate = jobDatePicker.value || new Date().toISOString().slice(0,10);
   const { data, error } = await supa.from('job_summary').select('*').eq('job_date', jobDate).order('sort_order', { ascending: true });
   if(error){ jobList.innerHTML = '<div style="color:var(--red);font-family:var(--mono);font-size:12px;">Error: '+esc(error.message)+'</div>'; return; }
@@ -827,16 +829,30 @@ function startDrag(row, e){
 // Same primitive as the old up/down buttons: swap two ADJACENT rows' sort_order.
 // sort_order spacing never matters, only relative order — see CLAUDE.md.
 function swapAdjacent(i, j){
-  const a = jobs[i], b = jobs[j];
-  const t = a.sort_order; a.sort_order = b.sort_order; b.sort_order = t;
   [jobs[i], jobs[j]] = [jobs[j], jobs[i]];
   renderJobs();
   const row = jobList.querySelector(`.jobRow[data-id="${draggedId}"]`);
   if(row) row.classList.add('dragging');
-  Promise.all([
-    supa.from('jobs').update({ sort_order: a.sort_order }).eq('id', a.id),
-    supa.from('jobs').update({ sort_order: b.sort_order }).eq('id', b.id)
-  ]);
+  renumberAndPersist();
+}
+
+// Reassign every job's sort_order to base+index (base = current min), then persist only the
+// rows whose value actually changed. Swapping two rows' raw values isn't enough: jobs scanned
+// in the same OCR batch can share the same whole-second epoch sort_order, so a plain swap of
+// tied values is a no-op on the server even though the UI shows the new order — the next
+// refresh then reverts it. Full renumbering makes every value distinct, so ties can't survive
+// a drag; after the first renumber, later swaps only touch the two rows that actually moved.
+function renumberAndPersist(){
+  const base = Math.min(...jobs.map(j => j.sort_order));
+  const updates = [];
+  jobs.forEach((j, k) => {
+    const val = base + k;
+    if(j.sort_order !== val){ j.sort_order = val; updates.push({ id: j.id, sort_order: val }); }
+  });
+  if(!updates.length) return;
+  pendingReorderWrites = pendingReorderWrites.then(() => Promise.all(
+    updates.map(u => supa.from('jobs').update({ sort_order: u.sort_order }).eq('id', u.id))
+  ));
 }
 
 // ---------- Dipping memory ----------
