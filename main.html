@@ -490,6 +490,19 @@ async function checkSession(){
   }
 }
 
+// Mobile browsers throttle/pause the SDK's background refresh timer while the
+// tab is hidden (screen locked, app switched away). The token can go stale
+// during that window with no visible sign, then the first write after resume
+// dies with a raw "permission denied" error. Re-sync on every SIGNED_OUT and
+// every time the tab becomes visible again so the UI reflects real session
+// state before the user hits a broken write.
+supa.auth.onAuthStateChange((event) => {
+  if(event === 'SIGNED_OUT') checkSession();
+});
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible') checkSession();
+});
+
 loginBtn.addEventListener('click', async ()=>{
   loginStatus.textContent = '';
   const { error } = await supa.auth.signInWithPassword({
