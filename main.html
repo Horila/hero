@@ -740,9 +740,9 @@ async function loadJobs(){
   updateStatsBar();
 }
 
-// planned_qty is in effective (mould) units, so "short" must compare against
-// effective_qty, not raw counted_total — for doubles jobs those differ 2x.
-function isShort(j){ return j.planned_qty != null && (j.effective_qty ?? 0) < j.planned_qty; }
+// planned_qty is always raw cores, same unit as counted_total — doubles'
+// effective_qty (halved) is for tonnage math only, not this comparison.
+function isShort(j){ return j.planned_qty != null && (j.counted_total ?? 0) < j.planned_qty; }
 
 function updateStatsBar(){
   const totalTonnage = jobs.reduce((sum, r) => sum + (r.tonnage || 0), 0);
@@ -795,8 +795,7 @@ function renderJobsMobile(){
   jobList.innerHTML = jobs.map(j=>{
     const planned = j.planned_qty ?? null;
     const counted = j.counted_total ?? 0;
-    const moulds = Math.round(j.effective_qty ?? 0);
-    const short = planned !== null && moulds < planned;
+    const short = planned !== null && counted < planned;
     const editing = editingIds.has(j.id);
     return `
       <div class="jobRow" data-id="${j.id}">
@@ -878,9 +877,8 @@ function renderJobsDesktop(){
   const rowsHtml = visible.map(j=>{
     const planned = j.planned_qty ?? null;
     const counted = j.counted_total ?? 0;
-    const moulds = Math.round(j.effective_qty ?? 0);
-    const short = planned !== null && moulds < planned;
-    const pct = planned ? Math.max(0, Math.min(100, Math.round(moulds / planned * 100))) : 0;
+    const short = planned !== null && counted < planned;
+    const pct = planned ? Math.max(0, Math.min(100, Math.round(counted / planned * 100))) : 0;
     const editing = editingIds.has(j.id);
     return `
       <tr class="jobRow ${short ? 'rowShort' : ''} ${j.still_making ? 'rowMaking' : ''}" data-id="${j.id}">
@@ -1054,7 +1052,7 @@ window.addEventListener('online', retryPendingSaves);
 // Re-fetch just the computed columns for one row after an edit that affects tonnage/counts,
 // and patch the DOM in place so the open edit panel / focus isn't disturbed by a full re-render.
 async function refreshRowMetrics(id){
-  const { data, error } = await supa.from('job_summary').select('tonnage,counted_total,effective_qty,planned_qty').eq('id', id).single();
+  const { data, error } = await supa.from('job_summary').select('tonnage,counted_total,planned_qty').eq('id', id).single();
   const stateEl = jobList.querySelector(`.manageSaveState[data-savestate="${id}"]`);
   if(error || !data){
     if(stateEl){ stateEl.textContent = 'saved — refresh to confirm totals'; stateEl.style.color = 'var(--red)'; }
@@ -1068,8 +1066,7 @@ async function refreshRowMetrics(id){
   if(!row) return;
   const planned = job.planned_qty ?? null;
   const counted = job.counted_total ?? 0;
-  const moulds = Math.round(job.effective_qty ?? 0);
-  const short = planned !== null && moulds < planned;
+  const short = planned !== null && counted < planned;
   const countEl = row.querySelector('.jrCount');
   if(countEl){ countEl.textContent = counted + '/' + (planned ?? '—'); countEl.className = 'jrCount ' + (short ? 'jrShort' : 'jrOk'); }
   const tonEl = row.querySelector('.jrTon');
@@ -1077,7 +1074,7 @@ async function refreshRowMetrics(id){
   const barEl = row.querySelector('.ratioBar');
   if(barEl){
     barEl.className = 'ratioBar ' + (short ? 'short' : '');
-    const pct = planned ? Math.max(0, Math.min(100, Math.round(moulds / planned * 100))) : 0;
+    const pct = planned ? Math.max(0, Math.min(100, Math.round(counted / planned * 100))) : 0;
     barEl.firstElementChild.style.width = pct + '%';
   }
 }
