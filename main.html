@@ -873,7 +873,6 @@ function renderJobsDesktop(){
         <td class="amCell roText">${esc(j.am_number)}</td>
         <td><input data-id="${j.id}" data-f="grade" value="${esc(j.grade)}"></td>
         <td class="roText">${esc(j.item_number) || '—'}</td>
-        <td><input data-id="${j.id}" data-f="customer_name" value="${esc(j.customer_name)}"></td>
         <td><input data-id="${j.id}" data-f="status" value="${esc(j.status)}"></td>
         <td>${j.is_trial ? '<span class="badge badge-trial">TRIAL</span>' : ''} ${j.still_making ? '<span class="badge badge-warn">MAKING</span>' : ''}</td>
         <td class="roText">${j.weight_kg ?? '—'}</td>
@@ -890,7 +889,7 @@ function renderJobsDesktop(){
       </tr>
       ${editing ? `
       <tr class="editDrawerRow" data-id="${j.id}">
-        <td colspan="15"><div class="editPanel">
+        <td colspan="14"><div class="editPanel">
           <div class="fieldRow" style="grid-template-columns:repeat(4,1fr);">
             <div><label>AM NUMBER</label><input data-id="${j.id}" data-f="am_number" value="${esc(j.am_number)}"></div>
             <div><label>ITEM NUMBER</label><input data-id="${j.id}" data-f="item_number" value="${esc(j.item_number)}"></div>
@@ -910,7 +909,7 @@ function renderJobsDesktop(){
 
   jobList.innerHTML = `<div class="tableScroll"><table class="desktopTable">
     <thead><tr>
-      <th></th><th class="amCell">AM #</th><th>Grade</th><th>Item #</th><th>Customer</th><th>Status</th><th>Flags</th>
+      <th></th><th class="amCell">AM #</th><th>Grade</th><th>Item #</th><th>Status</th><th>Flags</th>
       <th>Wt/kg</th><th>Planned</th><th>Counted</th><th>Dbl</th><th>Tonnage</th><th>Dip</th><th>Comment</th><th></th>
     </tr></thead>
     <tbody>${rowsHtml}</tbody>
