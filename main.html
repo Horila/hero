@@ -769,7 +769,7 @@ function updateStatsBar(){
   const tonnageLeft = tonnageUntilGradeChange(jobs);
   summaryStats.innerHTML = `
     <div class="statTile neutral"><div class="num">${jobs.length}</div><div class="lbl">Jobs today</div></div>
-    <div class="statTile neutral"><div class="num">${totalTonnage.toFixed(1)}t</div><div class="lbl">Total tonnage</div></div>
+    <div class="statTile neutral"><div class="num">${totalTonnage.toFixed(1)}t</div><div class="lbl">Tonnage used so far</div></div>
     <div class="statTile ${shortJobs.length ? 'warn' : 'ok'}"><div class="num">${shortJobs.length}</div><div class="lbl">Short of plan</div></div>
     <div class="statTile ${dippingJobs.length ? 'warn' : 'ok'}"><div class="num">${dippingJobs.length}</div><div class="lbl">Dipping due</div></div>
     <div class="statTile stillMaking neutral"><div class="num">${tonnageLeft.toFixed(1)}t</div><div class="lbl">Left till grade change</div></div>
