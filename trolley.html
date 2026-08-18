@@ -357,6 +357,20 @@ function queueSave(jobId){
   saveTimers[jobId] = setTimeout(()=> performSave(jobId), 500);
 }
 
+async function upsertCount(jobId, payload){
+  const { error } = await supa.from('counts').upsert(payload, { onConflict: 'job_id' });
+  return { ok: !error, error };
+}
+
+// Single shared timer chain for offline retries: both the initial failure
+// (from performSave) and each subsequent retry (from retryPendingSaves)
+// route through here, so concurrent failures never stack overlapping chains.
+let retryTimer = null;
+function scheduleRetry(){
+  clearTimeout(retryTimer);
+  retryTimer = setTimeout(retryPendingSaves, 15000);
+}
+
 async function performSave(jobId){
   const stateEl = document.querySelector(`[data-savestate="${jobId}"]`);
   const job = jobs.find(j=>j.job_id === jobId);
@@ -376,16 +390,16 @@ async function performSave(jobId){
     updated_at: new Date().toISOString()
   };
 
-  const { error } = await supa.from('counts').upsert(payload, { onConflict: 'job_id' });
+  const { ok, error } = await upsertCount(jobId, payload);
 
-  if(error){
+  if(!ok){
     setPendingEntry(jobId, payload);
     if(stateEl){
       stateEl.textContent = 'offline — will retry: ' + error.message;
       stateEl.className = 'saveState';
       stateEl.style.color = 'var(--red)';
     }
-    setTimeout(()=> retryPendingSaves(), 15000);
+    scheduleRetry();
   } else {
     clearPendingEntry(jobId);
     if(stateEl){ stateEl.textContent = 'saved'; stateEl.className = 'saveState saved'; }
@@ -397,14 +411,14 @@ async function retryPendingSaves(){
   const jobIds = Object.keys(pending);
   if(!jobIds.length) return;
   for(const jobId of jobIds){
-    const { error } = await supa.from('counts').upsert(pending[jobId], { onConflict: 'job_id' });
+    const { ok } = await upsertCount(jobId, pending[jobId]);
     const stateEl = document.querySelector(`[data-savestate="${jobId}"]`);
-    if(!error){
+    if(ok){
       clearPendingEntry(jobId);
       if(stateEl){ stateEl.textContent = 'saved'; stateEl.className = 'saveState saved'; }
     }
   }
-  if(Object.keys(getPending()).length) setTimeout(()=> retryPendingSaves(), 15000);
+  if(Object.keys(getPending()).length) scheduleRetry();
 }
 
 window.addEventListener('online', retryPendingSaves);

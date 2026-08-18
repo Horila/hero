@@ -310,6 +310,7 @@
 <script>
 // SUPABASE_URL / SUPABASE_ANON_KEY come from config.js
 const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+function todayStr(){ return new Date().toISOString().slice(0,10); }
 
 // ---------- Theme toggle ----------
 const themeToggle = document.getElementById('themeToggle');
@@ -435,7 +436,7 @@ const saveAllBtn = document.getElementById('saveAllBtn');
 const dipMemoryList = document.getElementById('dipMemoryList');
 const dipMemoryEmpty = document.getElementById('dipMemoryEmpty');
 
-jobDatePicker.value = new Date().toISOString().slice(0,10);
+jobDatePicker.value = todayStr();
 jobDatePicker.addEventListener('change', ()=>{ loadJobs(); updatePushLiveButton(); });
 refreshBtn.addEventListener('click', ()=>{ loadJobs(); loadDipMemory(); loadPublishedDay(); });
 
@@ -454,7 +455,7 @@ function updatePushLiveButton(){
 }
 
 pushLiveBtn.addEventListener('click', async ()=>{
-  const selected = jobDatePicker.value || new Date().toISOString().slice(0,10);
+  const selected = jobDatePicker.value || todayStr();
   pushLiveLabel.textContent = 'Pushing…';
   const { error } = await supa.from('published_day').update({ job_date: selected, updated_at: new Date().toISOString() }).eq('id', 1);
   if(error){ alert('Failed to push live: ' + error.message); updatePushLiveButton(); return; }
@@ -584,6 +585,48 @@ function resizeAndEncode(file, maxDim){
   });
 }
 
+// Shared job-field-editor form, used by the OCR review card, the mobile edit panel, and the
+// desktop edit drawer. They differ only in: which id attribute keys the inputs (data-i during
+// OCR review, before a job has a real id; data-id everywhere else), the checkbox id prefix
+// (must be unique per form so <label for> doesn't collide when several forms are open at once),
+// and whether it's the narrow 2-col/4-row layout with a customer field (OCR + mobile) or the
+// wide 4-col single-row layout without one (desktop, where customer isn't shown at all).
+function fieldInput(idAttr, idVal, field, label, job, extra){
+  extra = extra || {};
+  const typeAttr = extra.type ? ` type="${extra.type}"` : '';
+  const stepAttr = extra.step ? ` step="${extra.step}"` : '';
+  return `<div><label>${label}</label><input ${idAttr}="${idVal}" data-f="${field}"${typeAttr}${stepAttr} value="${esc(job[field])}"></div>`;
+}
+function fieldsHtml(job, idAttr, idVal, opts){
+  opts = opts || {};
+  const grade = fieldInput(idAttr, idVal, 'grade', 'GRADE', job);
+  const am = fieldInput(idAttr, idVal, 'am_number', 'AM NUMBER', job);
+  const item = fieldInput(idAttr, idVal, 'item_number', 'ITEM NUMBER', job);
+  const customer = fieldInput(idAttr, idVal, 'customer_name', 'CUSTOMER', job);
+  const weight = fieldInput(idAttr, idVal, 'weight_kg', 'WEIGHT PER CORE/MOULD (KG)', job, {type:'number', step:'any'});
+  const planned = fieldInput(idAttr, idVal, 'planned_qty', 'PLANNED CORES/MOULDS', job, {type:'number'});
+  const mingzhi = fieldInput(idAttr, idVal, 'mingzhi_hansberg_no', 'MINGZHI NO.', job);
+  const status = fieldInput(idAttr, idVal, 'status', 'STATUS', job);
+
+  const rowsHtml = opts.wide
+    ? `<div class="fieldRow" style="grid-template-columns:repeat(4,1fr);">${grade}${am}${item}${status}${weight}${planned}${mingzhi}</div>`
+    : `<div class="fieldRow">${grade}${am}</div>
+      <div class="fieldRow">${item}${customer}</div>
+      <div class="fieldRow">${weight}${planned}</div>
+      <div class="fieldRow">${mingzhi}${status}</div>`;
+
+  const trialId = `${opts.trialIdPrefix}${idVal}`, doublesId = `${opts.doublesIdPrefix}${idVal}`;
+  return `${rowsHtml}
+      <div class="checkboxRow">
+        <input type="checkbox" ${idAttr}="${idVal}" data-f="is_trial" id="${trialId}" ${job.is_trial ? 'checked':''}>
+        <label for="${trialId}" style="font-size:12px;">Trial job</label>
+      </div>
+      <div class="checkboxRow">
+        <input type="checkbox" ${idAttr}="${idVal}" data-f="is_doubles" id="${doublesId}" ${job.is_doubles ? 'checked':''}>
+        <label for="${doublesId}" style="font-size:12px;">Doubles (2 cores per mould)</label>
+      </div>`;
+}
+
 function renderReview(){
   reviewList.innerHTML = '';
   extractedJobs.forEach((job, i)=>{
@@ -591,30 +634,7 @@ function renderReview(){
     card.className = 'jobCard';
     card.innerHTML = `
       <div class="rowTop"><span class="idx">JOB ${i+1}</span><button class="removeBtn" data-i="${i}">✕</button></div>
-      <div class="fieldRow">
-        <div><label>GRADE</label><input data-i="${i}" data-f="grade" value="${esc(job.grade)}"></div>
-        <div><label>AM NUMBER</label><input data-i="${i}" data-f="am_number" value="${esc(job.am_number)}"></div>
-      </div>
-      <div class="fieldRow">
-        <div><label>ITEM NUMBER</label><input data-i="${i}" data-f="item_number" value="${esc(job.item_number)}"></div>
-        <div><label>CUSTOMER</label><input data-i="${i}" data-f="customer_name" value="${esc(job.customer_name)}"></div>
-      </div>
-      <div class="fieldRow">
-        <div><label>WEIGHT PER CORE/MOULD (KG)</label><input data-i="${i}" data-f="weight_kg" type="number" step="any" value="${esc(job.weight_kg)}"></div>
-        <div><label>PLANNED CORES/MOULDS</label><input data-i="${i}" data-f="planned_qty" type="number" value="${esc(job.planned_qty)}"></div>
-      </div>
-      <div class="fieldRow">
-        <div><label>MINGZHI NO.</label><input data-i="${i}" data-f="mingzhi_hansberg_no" value="${esc(job.mingzhi_hansberg_no)}"></div>
-        <div><label>STATUS</label><input data-i="${i}" data-f="status" value="${esc(job.status)}"></div>
-      </div>
-      <div class="checkboxRow">
-        <input type="checkbox" data-i="${i}" data-f="is_trial" id="trial${i}" ${job.is_trial ? 'checked':''}>
-        <label for="trial${i}" style="font-size:12px;">Trial job</label>
-      </div>
-      <div class="checkboxRow">
-        <input type="checkbox" data-i="${i}" data-f="is_doubles" id="doubles${i}" ${job.is_doubles ? 'checked':''}>
-        <label for="doubles${i}" style="font-size:12px;">Doubles (2 cores per mould)</label>
-      </div>
+      ${fieldsHtml(job, 'data-i', i, { trialIdPrefix: 'trial', doublesIdPrefix: 'doubles' })}
     `;
     reviewList.appendChild(card);
   });
@@ -638,7 +658,7 @@ function renderReview(){
 saveAllBtn.addEventListener('click', async ()=>{
   if(!extractedJobs.length) return;
   setStatus('Saving…', '');
-  const jobDate = jobDatePicker.value || new Date().toISOString().slice(0,10);
+  const jobDate = jobDatePicker.value || todayStr();
 
   const itemNumbers = extractedJobs.map(j => j.item_number).filter(Boolean);
   let dipMemory = {};
@@ -652,8 +672,8 @@ saveAllBtn.addEventListener('click', async ()=>{
     am_number: j.am_number || null,
     item_number: j.item_number || null,
     customer_name: j.customer_name || null,
-    weight_kg: j.weight_kg === '' ? null : parseFloat(j.weight_kg),
-    planned_qty: j.planned_qty === '' ? null : parseInt(j.planned_qty),
+    weight_kg: coerceField('weight_kg', j.weight_kg),
+    planned_qty: coerceField('planned_qty', j.planned_qty),
     mingzhi_hansberg_no: j.mingzhi_hansberg_no || null,
     status: j.status || null,
     is_trial: !!j.is_trial,
@@ -731,7 +751,7 @@ async function syncCountsFromPreviousDay(savedRows){
 // ---------- Job list: merged Manage + Summary, compact rows ----------
 async function loadJobs(){
   await pendingReorderWrites; // let in-flight sort_order writes land first, else stale order re-fetched — see swapAdjacent
-  const jobDate = jobDatePicker.value || new Date().toISOString().slice(0,10);
+  const jobDate = jobDatePicker.value || todayStr();
   const { data, error } = await supa.from('job_summary').select('*').eq('job_date', jobDate).order('sort_order', { ascending: true });
   if(error){ jobList.innerHTML = '<div style="color:var(--red);font-family:var(--mono);font-size:12px;">Error: '+esc(error.message)+'</div>'; return; }
   jobs = data || [];
@@ -743,6 +763,15 @@ async function loadJobs(){
 // planned_qty is always raw cores, same unit as counted_total — doubles'
 // effective_qty (halved) is for tonnage math only, not this comparison.
 function isShort(j){ return j.planned_qty != null && (j.counted_total ?? 0) < j.planned_qty; }
+
+// weight_kg/planned_qty come from text/number inputs as strings; '' means "cleared" -> null,
+// otherwise parse per field (weight is decimal, planned_qty is a whole count). Any other field
+// passes through unchanged.
+function coerceField(field, value){
+  if(field === 'weight_kg') return value === '' ? null : parseFloat(value);
+  if(field === 'planned_qty') return value === '' ? null : parseInt(value);
+  return value;
+}
 
 // Sum of counted tonnage for the run of consecutive same-grade jobs starting
 // at the first not-done job in sort order — i.e. total tonnage of the
@@ -813,7 +842,7 @@ function renderJobsMobile(){
   jobList.innerHTML = jobs.map(j=>{
     const planned = j.planned_qty ?? null;
     const counted = j.counted_total ?? 0;
-    const short = planned !== null && counted < planned;
+    const short = isShort(j);
     const editing = editingIds.has(j.id);
     return `
       <div class="jobRow" data-id="${j.id}">
@@ -834,30 +863,7 @@ function renderJobsMobile(){
         <button class="editToggleBtn" data-id="${j.id}">${editing ? 'Done' : 'Edit'}</button>
         ${editing ? `
         <div class="editPanel">
-          <div class="fieldRow">
-            <div><label>GRADE</label><input data-id="${j.id}" data-f="grade" value="${esc(j.grade)}"></div>
-            <div><label>AM NUMBER</label><input data-id="${j.id}" data-f="am_number" value="${esc(j.am_number)}"></div>
-          </div>
-          <div class="fieldRow">
-            <div><label>ITEM NUMBER</label><input data-id="${j.id}" data-f="item_number" value="${esc(j.item_number)}"></div>
-            <div><label>CUSTOMER</label><input data-id="${j.id}" data-f="customer_name" value="${esc(j.customer_name)}"></div>
-          </div>
-          <div class="fieldRow">
-            <div><label>WEIGHT PER CORE/MOULD (KG)</label><input data-id="${j.id}" data-f="weight_kg" type="number" step="any" value="${esc(j.weight_kg)}"></div>
-            <div><label>PLANNED CORES/MOULDS</label><input data-id="${j.id}" data-f="planned_qty" type="number" value="${esc(j.planned_qty)}"></div>
-          </div>
-          <div class="fieldRow">
-            <div><label>MINGZHI NO.</label><input data-id="${j.id}" data-f="mingzhi_hansberg_no" value="${esc(j.mingzhi_hansberg_no)}"></div>
-            <div><label>STATUS</label><input data-id="${j.id}" data-f="status" value="${esc(j.status)}"></div>
-          </div>
-          <div class="checkboxRow">
-            <input type="checkbox" data-id="${j.id}" data-f="is_trial" id="editTrial${j.id}" ${j.is_trial ? 'checked':''}>
-            <label for="editTrial${j.id}" style="font-size:12px;">Trial job</label>
-          </div>
-          <div class="checkboxRow">
-            <input type="checkbox" data-id="${j.id}" data-f="is_doubles" id="editDoubles${j.id}" ${j.is_doubles ? 'checked':''}>
-            <label for="editDoubles${j.id}" style="font-size:12px;">Doubles (2 cores per mould)</label>
-          </div>
+          ${fieldsHtml(j, 'data-id', j.id, { trialIdPrefix: 'editTrial', doublesIdPrefix: 'editDoubles' })}
           ${j.comment ? `<div class="jrComment">"${esc(j.comment)}"</div>` : ''}
           <div class="manageSaveState" data-savestate="${j.id}"></div>
           <button class="danger deleteJobBtn" data-id="${j.id}" style="margin-top:10px;">Delete job</button>
@@ -896,7 +902,7 @@ function renderJobsDesktop(){
   const rowsHtml = visible.map(j=>{
     const planned = j.planned_qty ?? null;
     const counted = j.counted_total ?? 0;
-    const short = planned !== null && counted < planned;
+    const short = isShort(j);
     const pct = planned ? Math.max(0, Math.min(100, Math.round(counted / planned * 100))) : 0;
     const editing = editingIds.has(j.id);
     return `
@@ -923,23 +929,7 @@ function renderJobsDesktop(){
       ${editing ? `
       <tr class="editDrawerRow" data-id="${j.id}">
         <td colspan="15"><div class="editPanel">
-          <div class="fieldRow" style="grid-template-columns:repeat(4,1fr);">
-            <div><label>GRADE</label><input data-id="${j.id}" data-f="grade" value="${esc(j.grade)}"></div>
-            <div><label>AM NUMBER</label><input data-id="${j.id}" data-f="am_number" value="${esc(j.am_number)}"></div>
-            <div><label>ITEM NUMBER</label><input data-id="${j.id}" data-f="item_number" value="${esc(j.item_number)}"></div>
-            <div><label>STATUS</label><input data-id="${j.id}" data-f="status" value="${esc(j.status)}"></div>
-            <div><label>WEIGHT PER CORE/MOULD (KG)</label><input data-id="${j.id}" data-f="weight_kg" type="number" step="any" value="${esc(j.weight_kg)}"></div>
-            <div><label>PLANNED CORES/MOULDS</label><input data-id="${j.id}" data-f="planned_qty" type="number" value="${esc(j.planned_qty)}"></div>
-            <div><label>MINGZHI NO.</label><input data-id="${j.id}" data-f="mingzhi_hansberg_no" value="${esc(j.mingzhi_hansberg_no)}"></div>
-          </div>
-          <div class="checkboxRow">
-            <input type="checkbox" data-id="${j.id}" data-f="is_trial" id="dTrial${j.id}" ${j.is_trial ? 'checked' : ''}>
-            <label for="dTrial${j.id}" style="font-size:12px;">Trial job</label>
-          </div>
-          <div class="checkboxRow">
-            <input type="checkbox" data-id="${j.id}" data-f="is_doubles" id="dDoubles${j.id}" ${j.is_doubles ? 'checked' : ''}>
-            <label for="dDoubles${j.id}" style="font-size:12px;">Doubles (2 cores per mould)</label>
-          </div>
+          ${fieldsHtml(j, 'data-id', j.id, { wide: true, trialIdPrefix: 'dTrial', doublesIdPrefix: 'dDoubles' })}
           ${j.comment ? `<div class="jrComment">"${esc(j.comment)}"</div>` : ''}
           <div class="manageSaveState" data-savestate="${j.id}"></div>
           <button class="danger deleteJobBtn" data-id="${j.id}" style="margin-top:10px;width:auto;">Delete job</button>
@@ -1034,9 +1024,7 @@ async function performSave(id, field){
   const job = jobs.find(j => j.id === id);
   if(!job) return;
   const patch = {};
-  patch[field] = (field === 'weight_kg') ? (job[field] === '' ? null : parseFloat(job[field]))
-    : (field === 'planned_qty') ? (job[field] === '' ? null : parseInt(job[field]))
-    : job[field];
+  patch[field] = coerceField(field, job[field]);
 
   const { error } = await supa.from('jobs').update(patch).eq('id', id);
   const el = jobList.querySelector(`.manageSaveState[data-savestate="${id}"]`);
@@ -1086,7 +1074,7 @@ async function refreshRowMetrics(id){
   if(!row) return;
   const planned = job.planned_qty ?? null;
   const counted = job.counted_total ?? 0;
-  const short = planned !== null && counted < planned;
+  const short = isShort(job);
   const countEl = row.querySelector('.jrCount');
   if(countEl){ countEl.textContent = counted + '/' + (planned ?? '—'); countEl.className = 'jrCount ' + (short ? 'jrShort' : 'jrOk'); }
   const tonEl = row.querySelector('.jrTon');
