@@ -744,17 +744,43 @@ async function loadJobs(){
 // effective_qty (halved) is for tonnage math only, not this comparison.
 function isShort(j){ return j.planned_qty != null && (j.counted_total ?? 0) < j.planned_qty; }
 
+// Tonnage math mirrors job_summary's server-side formula: doubles halve the
+// core count before multiplying by weight, since a mould's weight counts
+// once regardless of how many cores share it.
+function plannedTonnage(j){
+  const qty = j.is_doubles ? (j.planned_qty ?? 0) / 2 : (j.planned_qty ?? 0);
+  return qty * (j.weight_kg ?? 0) / 1000;
+}
+
+// Sum of remaining tonnage (planned - counted, floored at 0) for the run of
+// consecutive same-grade jobs starting at the first not-done job in sort
+// order — i.e. how much of the CURRENT grade is left before the next job in
+// sequence switches to a different grade. Done jobs are skipped entirely
+// (finished work, not part of the current run).
+function tonnageUntilGradeChange(sortedJobs){
+  const active = sortedJobs.filter(j => !j.is_done);
+  if(!active.length) return 0;
+  const grade = active[0].grade;
+  let total = 0;
+  for(const j of active){
+    if(j.grade !== grade) break;
+    total += Math.max(0, plannedTonnage(j) - (j.tonnage || 0));
+  }
+  return total;
+}
+
 function updateStatsBar(){
   const totalTonnage = jobs.reduce((sum, r) => sum + (r.tonnage || 0), 0);
   const shortJobs = jobs.filter(isShort);
   const dippingJobs = jobs.filter(r => r.needs_dipping);
   const makingJobs = jobs.filter(r => r.still_making);
+  const tonnageLeft = tonnageUntilGradeChange(jobs);
   summaryStats.innerHTML = `
     <div class="statTile neutral"><div class="num">${jobs.length}</div><div class="lbl">Jobs today</div></div>
     <div class="statTile neutral"><div class="num">${totalTonnage.toFixed(1)}t</div><div class="lbl">Total tonnage</div></div>
     <div class="statTile ${shortJobs.length ? 'warn' : 'ok'}"><div class="num">${shortJobs.length}</div><div class="lbl">Short of plan</div></div>
     <div class="statTile ${dippingJobs.length ? 'warn' : 'ok'}"><div class="num">${dippingJobs.length}</div><div class="lbl">Dipping due</div></div>
-    <div class="statTile stillMaking ${makingJobs.length ? 'warn' : 'ok'}"><div class="num">${makingJobs.length}</div><div class="lbl">Still making</div></div>
+    <div class="statTile stillMaking neutral"><div class="num">${tonnageLeft.toFixed(1)}t</div><div class="lbl">Left till grade change</div></div>
   `;
 
   const gradeTotals = {};
@@ -810,6 +836,7 @@ function renderJobsMobile(){
             <span class="jrCount ${short ? 'jrShort' : 'jrOk'}">${counted}/${planned ?? '—'}</span>
             <span class="jrTon">${(j.tonnage||0).toFixed(2)}t</span>
             <label class="jrDip"><input type="checkbox" class="dippingCheckbox" data-id="${j.id}" ${j.needs_dipping ? 'checked':''}> dip</label>
+            <label class="jrDip"><input type="checkbox" data-id="${j.id}" data-f="is_done" ${j.is_done ? 'checked':''}> done</label>
           </div>
         </div>
         <button class="editToggleBtn" data-id="${j.id}">${editing ? 'Done' : 'Edit'}</button>
@@ -897,12 +924,13 @@ function renderJobsDesktop(){
         <td class="roText" style="text-align:center;">${j.is_doubles ? '✓' : '—'}</td>
         <td class="jrTon">${(j.tonnage||0).toFixed(2)}t</td>
         <td style="text-align:center;"><input type="checkbox" class="dippingCheckbox" data-id="${j.id}" ${j.needs_dipping ? 'checked' : ''}></td>
+        <td style="text-align:center;"><input type="checkbox" data-id="${j.id}" data-f="is_done" ${j.is_done ? 'checked' : ''}></td>
         <td class="commentCell" title="${esc(j.comment)}">${j.comment ? esc(j.comment) : ''}</td>
         <td style="text-align:center;"><button class="editToggleBtn" data-id="${j.id}" style="width:auto;padding:3px 8px;">${editing ? '▾' : '▸'}</button></td>
       </tr>
       ${editing ? `
       <tr class="editDrawerRow" data-id="${j.id}">
-        <td colspan="14"><div class="editPanel">
+        <td colspan="15"><div class="editPanel">
           <div class="fieldRow" style="grid-template-columns:repeat(4,1fr);">
             <div><label>GRADE</label><input data-id="${j.id}" data-f="grade" value="${esc(j.grade)}"></div>
             <div><label>AM NUMBER</label><input data-id="${j.id}" data-f="am_number" value="${esc(j.am_number)}"></div>
@@ -930,7 +958,7 @@ function renderJobsDesktop(){
   jobList.innerHTML = `<div class="tableScroll"><table class="desktopTable">
     <thead><tr>
       <th></th><th class="amCell">AM #</th><th>Grade</th><th>Item #</th><th>Status</th><th>Flags</th>
-      <th>Wt/kg</th><th>Planned</th><th>Counted</th><th>Dbl</th><th>Tonnage</th><th>Dip</th><th>Comment</th><th></th>
+      <th>Wt/kg</th><th>Planned</th><th>Counted</th><th>Dbl</th><th>Tonnage</th><th>Dip</th><th>Done</th><th>Comment</th><th></th>
     </tr></thead>
     <tbody>${rowsHtml}</tbody>
   </table></div>`;

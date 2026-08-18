@@ -29,6 +29,7 @@ create table if not exists jobs (
   is_trial boolean default false,
   is_doubles boolean default false,
   needs_dipping boolean default false,
+  is_done boolean default false,
   job_date date not null default current_date,
   sort_order bigint default extract(epoch from clock_timestamp())::bigint,
   created_at timestamptz default now()
@@ -106,6 +107,7 @@ select
   ) as total_cores
 from jobs j
 left join counts c on c.job_id = j.id
+where coalesce(j.is_done, false) = false
 order by j.job_date desc, j.sort_order asc;
 
 -- ---------- View: Horatio's summary with tonnage ----------
