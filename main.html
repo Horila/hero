@@ -260,7 +260,7 @@ function applyTheme(theme){
   document.body.classList.toggle('light', theme === 'light');
   themeToggle.textContent = theme === 'light' ? '☀️ Light' : '🌙 Dark';
 }
-applyTheme(localStorage.getItem('coreCountingTheme') || 'dark');
+applyTheme(localStorage.getItem('coreCountingTheme') || 'light');
 themeToggle.addEventListener('click', ()=>{
   const next = document.body.classList.contains('light') ? 'dark' : 'light';
   localStorage.setItem('coreCountingTheme', next);
