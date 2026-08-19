@@ -61,7 +61,42 @@
   body.light .topBar{background:rgba(245,241,232,.85);}
   .topBar .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:14px;letter-spacing:-.01em;}
   .topBar .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--amber);box-shadow:0 0 8px var(--amber);}
-  #themeToggle, #viewToggle{width:auto;padding:7px 11px;font-size:11px;font-family:var(--mono);}
+  #themeToggle, #viewToggle, #userMenuBtn{width:auto;padding:7px 11px;font-size:11px;font-family:var(--mono);}
+
+  /* ---- User menu (top bar) ---- */
+  .userMenuWrap{position:relative;}
+  .userMenuDropdown{display:none;position:absolute;top:calc(100% + 6px);right:0;background:var(--panel);
+    border:1px solid var(--line);border-radius:var(--radius-sm);box-shadow:var(--shadow);min-width:170px;z-index:30;padding:8px;}
+  .userMenuDropdown.open{display:block;}
+  .userMenuName{font-family:var(--mono);font-size:11px;color:var(--dim);padding:4px 6px 8px 6px;
+    border-bottom:1px solid var(--line);margin-bottom:6px;word-break:break-all;}
+  .userMenuItem{width:100%;margin-top:4px;}
+
+  /* ---- Manage-users modal ---- */
+  .modalOverlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;
+    align-items:center;justify-content:center;padding:16px;}
+  .modalOverlay.open{display:flex;}
+  .modalCard{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:16px;width:380px;max-width:100%;max-height:85vh;overflow-y:auto;}
+  .modalHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+  .modalCloseBtn{width:auto;padding:4px 10px;background:transparent;border:none;color:var(--dim);font-size:16px;}
+  .userRow{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);}
+  .userRow .userInfo{flex:1;min-width:0;}
+  .userRow .userInfo .uName{font-weight:700;font-size:13px;}
+  .userRow .userInfo .uEmail{font-size:11px;color:var(--dim);font-family:var(--mono);word-break:break-all;}
+  .userRow select{width:auto;margin:0;font-size:11px;padding:5px 6px;}
+  .userRow .userDeleteBtn{width:auto;padding:4px 8px;background:transparent;border:none;color:var(--red);font-size:16px;}
+  .permBadge{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.03em;color:var(--amber);
+    background:var(--amber-bg);padding:3px 8px;border-radius:999px;white-space:nowrap;}
+
+  /* ---- View-only lock: everything except the pace card + top bar goes inert ---- */
+  body.view-only #addJobSection{display:none;}
+  body.view-only #chatInput,
+  body.view-only #chatSendBtn,
+  body.view-only #pushLiveBtn,
+  body.view-only #dipMemoryList{
+    pointer-events:none;opacity:.55;
+  }
 
   #refreshBtn{
     position:fixed;top:56px;right:12px;z-index:15;width:auto;padding:6px 10px;font-size:11px;
@@ -260,6 +295,39 @@
   <div style="display:flex;gap:8px;">
     <button id="viewToggle">🖥 Desktop</button>
     <button id="themeToggle">🌙 Dark</button>
+    <div class="userMenuWrap">
+      <button id="userMenuBtn">👤</button>
+      <div id="userMenuDropdown" class="userMenuDropdown">
+        <div id="userMenuName" class="userMenuName"></div>
+        <button id="manageUsersBtn" class="userMenuItem" style="display:none;">Manage users</button>
+        <button class="userMenuItem danger" id="signOutBtn">Sign out</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="userModalOverlay" class="modalOverlay">
+  <div class="modalCard">
+    <div class="modalHead">
+      <h2 class="cardHeader" style="margin:0;">MANAGE USERS</h2>
+      <button id="userModalCloseBtn" class="modalCloseBtn">✕</button>
+    </div>
+    <div id="userModalList"></div>
+    <div class="userAddForm">
+      <label>NAME</label>
+      <input type="text" id="newUserName">
+      <label>EMAIL</label>
+      <input type="email" id="newUserEmail">
+      <label>PASSWORD</label>
+      <input type="password" id="newUserPassword">
+      <label>PERMISSION</label>
+      <select id="newUserPermission">
+        <option value="full_access">Full access</option>
+        <option value="view_only">View only</option>
+      </select>
+      <button class="primary" id="addUserBtn" style="margin-top:10px;">+ Add user</button>
+      <div id="userModalStatus" style="font-family:var(--mono);font-size:12px;margin-top:8px;"></div>
+    </div>
   </div>
 </div>
 
@@ -294,8 +362,6 @@
 
   <!-- ============ MAIN APP — single page, no tabs ============ -->
   <div id="mainScreen" style="padding-top:8px;">
-    <div class="subtitle" id="userEmail" style="margin-bottom:8px;"></div>
-
     <div class="dateRow">
       <div class="dateChip">
         <label>DAY</label>
@@ -371,20 +437,22 @@
     </div>
 
     <!-- Scan / upload / manual add — bottom of page, under all jobs -->
-    <div class="card" style="margin-top:18px;">
-      <h2 class="cardHeader">ADD / SCAN NEW JOB</h2>
-      <input type="file" id="fileInput" accept="image/*" capture="environment">
-      <input type="file" id="fileInputUpload" accept="image/*">
-      <div class="scanBtnRow">
-        <button class="primary" id="scanBtn">📷 Take photo</button>
-        <button id="uploadBtn">🖼 Upload photo</button>
+    <div id="addJobSection">
+      <div class="card" style="margin-top:18px;">
+        <h2 class="cardHeader">ADD / SCAN NEW JOB</h2>
+        <input type="file" id="fileInput" accept="image/*" capture="environment">
+        <input type="file" id="fileInputUpload" accept="image/*">
+        <div class="scanBtnRow">
+          <button class="primary" id="scanBtn">📷 Take photo</button>
+          <button id="uploadBtn">🖼 Upload photo</button>
+        </div>
+        <button id="manualAddBtn" style="margin-top:8px;">+ Add job manually</button>
+        <div id="status"></div>
       </div>
-      <button id="manualAddBtn" style="margin-top:8px;">+ Add job manually</button>
-      <div id="status"></div>
-    </div>
 
-    <div id="reviewList"></div>
-    <button class="primary" id="saveAllBtn" style="display:none;">Save all to jobs table</button>
+      <div id="reviewList"></div>
+      <button class="primary" id="saveAllBtn" style="display:none;">Save all to jobs table</button>
+    </div>
 
     <details>
       <summary>Dipping memory</summary>
@@ -393,8 +461,6 @@
         <div id="dipMemoryEmpty" style="display:none;font-family:var(--mono);font-size:12px;color:var(--dim);text-align:center;padding:10px 0;">Nothing remembered yet — tick Dipping on a job with an item number to start.</div>
       </div>
     </details>
-
-    <button class="danger" id="logoutBtn" style="margin-top:20px;">Sign out</button>
   </div>
 
 </div>
@@ -403,6 +469,12 @@
 // SUPABASE_URL / SUPABASE_ANON_KEY come from config.js
 const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 function todayStr(){ return new Date().toISOString().slice(0,10); }
+
+// currentUser drives the view-only lock below — real enforcement is in Postgres RLS
+// (is_full_access()), this is just UX. Defaults to full_access so nothing flashes
+// locked before checkSession() resolves the real value on login.
+let currentUser = { name: '', email: '', permission: 'full_access', is_owner: false };
+function isFullAccess(){ return currentUser.permission === 'full_access'; }
 
 // ---------- Theme toggle ----------
 const themeToggle = document.getElementById('themeToggle');
@@ -763,6 +835,7 @@ chatToggleBtn.addEventListener('click', ()=>{
 });
 
 async function sendChatMessage(){
+  if(!isFullAccess()) return;
   const body = chatInput.value.trim();
   if(!body) return;
   const day = jobDatePicker.value || todayStr();
@@ -781,8 +854,93 @@ const loginEmail = document.getElementById('loginEmail');
 const loginPassword = document.getElementById('loginPassword');
 const loginBtn = document.getElementById('loginBtn');
 const loginStatus = document.getElementById('loginStatus');
-const logoutBtn = document.getElementById('logoutBtn');
-const userEmail = document.getElementById('userEmail');
+
+// ---------- User menu / manage users ----------
+const userMenuBtn = document.getElementById('userMenuBtn');
+const userMenuDropdown = document.getElementById('userMenuDropdown');
+const userMenuName = document.getElementById('userMenuName');
+const manageUsersBtn = document.getElementById('manageUsersBtn');
+const signOutBtn = document.getElementById('signOutBtn');
+const userModalOverlay = document.getElementById('userModalOverlay');
+const userModalCloseBtn = document.getElementById('userModalCloseBtn');
+const userModalList = document.getElementById('userModalList');
+const newUserName = document.getElementById('newUserName');
+const newUserEmail = document.getElementById('newUserEmail');
+const newUserPassword = document.getElementById('newUserPassword');
+const newUserPermission = document.getElementById('newUserPermission');
+const addUserBtn = document.getElementById('addUserBtn');
+const userModalStatus = document.getElementById('userModalStatus');
+
+userMenuBtn.addEventListener('click', (e)=>{
+  e.stopPropagation();
+  userMenuDropdown.classList.toggle('open');
+});
+document.addEventListener('click', ()=> userMenuDropdown.classList.remove('open'));
+
+async function callManageUsers(action, payload){
+  const { data, error } = await supa.functions.invoke('manage-users', { body: { action, ...payload } });
+  if(error) return { error: error.message };
+  if(data && data.error) return { error: data.error };
+  return { data };
+}
+
+async function renderUserModalList(){
+  const { data, error } = await callManageUsers('list');
+  if(error){ userModalList.innerHTML = `<div style="color:var(--red);font-family:var(--mono);font-size:12px;">${esc(error)}</div>`; return; }
+  userModalList.innerHTML = (data || []).map(u => `
+    <div class="userRow" data-user-id="${u.user_id}">
+      <div class="userInfo"><div class="uName">${esc(u.name)}</div><div class="uEmail">${esc(u.email)}</div></div>
+      ${u.is_owner ? '<span class="permBadge">Admin</span>' : `
+      <select class="userPermSelect" data-user-id="${u.user_id}">
+        <option value="full_access" ${u.permission === 'full_access' ? 'selected' : ''}>Full access</option>
+        <option value="view_only" ${u.permission === 'view_only' ? 'selected' : ''}>View only</option>
+      </select>
+      <button class="userDeleteBtn" data-user-id="${u.user_id}" data-user-name="${esc(u.name)}">✕</button>
+      `}
+    </div>
+  `).join('');
+}
+
+userModalList.addEventListener('change', async (e)=>{
+  const sel = e.target.closest('.userPermSelect');
+  if(!sel) return;
+  const { error } = await callManageUsers('update', { user_id: sel.dataset.userId, permission: sel.value });
+  if(error){ alert('Failed to update: ' + error); renderUserModalList(); }
+});
+
+userModalList.addEventListener('click', async (e)=>{
+  const btn = e.target.closest('.userDeleteBtn');
+  if(!btn) return;
+  if(!confirm(`Remove ${btn.dataset.userName}'s login? This cannot be undone.`)) return;
+  const { error } = await callManageUsers('delete', { user_id: btn.dataset.userId });
+  if(error){ alert('Failed to delete: ' + error); return; }
+  renderUserModalList();
+});
+
+manageUsersBtn.addEventListener('click', ()=>{
+  userMenuDropdown.classList.remove('open');
+  userModalStatus.textContent = '';
+  newUserName.value = ''; newUserEmail.value = ''; newUserPassword.value = '';
+  newUserPermission.value = 'full_access';
+  userModalOverlay.classList.add('open');
+  renderUserModalList();
+});
+userModalCloseBtn.addEventListener('click', ()=> userModalOverlay.classList.remove('open'));
+userModalOverlay.addEventListener('click', (e)=>{ if(e.target === userModalOverlay) userModalOverlay.classList.remove('open'); });
+
+addUserBtn.addEventListener('click', async ()=>{
+  const name = newUserName.value.trim();
+  const email = newUserEmail.value.trim();
+  const password = newUserPassword.value;
+  const permission = newUserPermission.value;
+  if(!name || !email || !password){ userModalStatus.textContent = 'Name, email, and password are all required'; userModalStatus.style.color = 'var(--red)'; return; }
+  userModalStatus.textContent = 'Adding…'; userModalStatus.style.color = 'var(--dim)';
+  const { error } = await callManageUsers('create', { name, email, password, permission });
+  if(error){ userModalStatus.textContent = error; userModalStatus.style.color = 'var(--red)'; return; }
+  newUserName.value = ''; newUserEmail.value = ''; newUserPassword.value = '';
+  userModalStatus.textContent = 'User added'; userModalStatus.style.color = 'var(--green)';
+  renderUserModalList();
+});
 
 const jobDatePicker = document.getElementById('jobDatePicker');
 const pushLiveBtn = document.getElementById('pushLiveBtn');
@@ -841,6 +999,7 @@ function updatePushLiveButton(){
 }
 
 pushLiveBtn.addEventListener('click', async ()=>{
+  if(!isFullAccess()) return;
   const selected = jobDatePicker.value || todayStr();
   pushLiveLabel.textContent = 'Pushing…';
   const { error } = await supa.from('published_day').update({ job_date: selected, updated_at: new Date().toISOString() }).eq('id', 1);
@@ -862,7 +1021,11 @@ async function checkSession(){
   if(session){
     loginScreen.style.display = 'none';
     mainScreen.style.display = 'block';
-    userEmail.textContent = session.user.email;
+    const { data: userRow } = await supa.from('app_users').select('user_id,name,email,permission,is_owner').eq('user_id', session.user.id).single();
+    currentUser = userRow || { user_id: session.user.id, name: session.user.email, email: session.user.email, permission: 'full_access', is_owner: false };
+    userMenuName.textContent = currentUser.name + (currentUser.permission === 'view_only' ? ' (view only)' : '');
+    manageUsersBtn.style.display = currentUser.is_owner ? 'block' : 'none';
+    document.body.classList.toggle('view-only', currentUser.permission === 'view_only');
     loadJobs();
     loadDipMemory();
     loadPublishedDay();
@@ -872,6 +1035,8 @@ async function checkSession(){
   } else {
     loginScreen.style.display = 'block';
     mainScreen.style.display = 'none';
+    userModalOverlay.classList.remove('open');
+    userMenuDropdown.classList.remove('open');
     stopChatPolling();
     stopAdditionsPolling();
     stopPacePolling();
@@ -901,7 +1066,8 @@ loginBtn.addEventListener('click', async ()=>{
   checkSession();
 });
 
-logoutBtn.addEventListener('click', async ()=>{
+signOutBtn.addEventListener('click', async ()=>{
+  userMenuDropdown.classList.remove('open');
   await supa.auth.signOut();
   checkSession();
 });
@@ -1048,7 +1214,7 @@ function renderReview(){
 }
 
 saveAllBtn.addEventListener('click', async ()=>{
-  if(!extractedJobs.length) return;
+  if(!isFullAccess() || !extractedJobs.length) return;
   setStatus('Saving…', '');
   const jobDate = jobDatePicker.value || todayStr();
 
@@ -1265,7 +1431,7 @@ function renderJobsMobile(){
             <label class="jrDip"><input type="checkbox" data-id="${j.id}" data-f="is_done" ${j.is_done ? 'checked':''}> done</label>
           </div>
         </div>
-        <button class="editToggleBtn" data-id="${j.id}">${editing ? 'Done' : 'Edit'}</button>
+        ${isFullAccess() ? `<button class="editToggleBtn" data-id="${j.id}">${editing ? 'Done' : 'Edit'}</button>` : ''}
         ${editing ? `
         <div class="editPanel">
           ${fieldsHtml(j, 'data-id', j.id, { trialIdPrefix: 'editTrial', doublesIdPrefix: 'editDoubles' })}
@@ -1331,7 +1497,7 @@ function renderJobsDesktop(){
         <td style="text-align:center;"><input type="checkbox" class="dippingCheckbox" data-id="${j.id}" ${j.needs_dipping ? 'checked' : ''}></td>
         <td style="text-align:center;"><input type="checkbox" data-id="${j.id}" data-f="is_done" ${j.is_done ? 'checked' : ''}></td>
         <td class="commentCell" title="${esc(j.comment)}">${j.comment ? esc(j.comment) : ''}</td>
-        <td style="text-align:center;"><button class="editToggleBtn" data-id="${j.id}" style="width:auto;padding:3px 8px;">${editing ? '▾' : '▸'}</button></td>
+        <td style="text-align:center;">${isFullAccess() ? `<button class="editToggleBtn" data-id="${j.id}" style="width:auto;padding:3px 8px;">${editing ? '▾' : '▸'}</button>` : ''}</td>
       </tr>
       ${editing ? `
       <tr class="editDrawerRow" data-id="${j.id}">
@@ -1355,6 +1521,7 @@ function renderJobsDesktop(){
 
 // Delegated listeners — bound once, never re-bound on render.
 jobList.addEventListener('input', (e)=>{
+  if(!isFullAccess()) return;
   const inp = e.target.closest('input[data-f]');
   if(!inp || inp.type === 'checkbox') return;
   const job = jobs.find(j => j.id === inp.dataset.id);
@@ -1363,16 +1530,25 @@ jobList.addEventListener('input', (e)=>{
   queueSave(inp.dataset.id, inp.dataset.f, inp.value);
 });
 
-jobList.addEventListener('change', (e)=>{
+jobList.addEventListener('change', async (e)=>{
   const cb = e.target.closest('input[type="checkbox"][data-f]');
   if(cb){
     const job = jobs.find(j => j.id === cb.dataset.id);
-    if(job){
-      const wasCurrentPaceJob = cb.dataset.f === 'is_done' && cb.checked && job.id === effectiveCurrentJobId();
-      job[cb.dataset.f] = cb.checked;
-      queueSave(cb.dataset.id, cb.dataset.f, cb.checked);
+    if(!job) return;
+    // "done" is open to every logged-in user (view_only included) via the set_job_done RPC —
+    // everything else here (is_trial/is_doubles) only ever renders inside the edit panel,
+    // which full_access-only renderJobs* gates already, so this check is enough.
+    if(cb.dataset.f === 'is_done'){
+      const wasCurrentPaceJob = cb.checked && job.id === effectiveCurrentJobId();
+      job.is_done = cb.checked;
+      const { error } = await supa.rpc('set_job_done', { p_job_id: job.id, p_done: cb.checked });
+      if(error){ alert('Failed to update: ' + error.message); job.is_done = !cb.checked; cb.checked = !cb.checked; return; }
       if(wasCurrentPaceJob) advancePace(job.id);
+      return;
     }
+    if(!isFullAccess()) return;
+    job[cb.dataset.f] = cb.checked;
+    queueSave(cb.dataset.id, cb.dataset.f, cb.checked);
     return;
   }
   const dip = e.target.closest('.dippingCheckbox');
@@ -1380,6 +1556,7 @@ jobList.addEventListener('change', (e)=>{
 });
 
 jobList.addEventListener('click', async (e)=>{
+  if(!isFullAccess()) return;
   const editBtn = e.target.closest('.editToggleBtn');
   if(editBtn){
     const id = editBtn.dataset.id;
@@ -1401,19 +1578,15 @@ jobList.addEventListener('click', async (e)=>{
   }
 });
 
+// Open to every logged-in user (view_only included) via set_job_dipping — it also upserts
+// dip_items server-side, so this stays a single RPC call instead of two table writes.
 async function handleDippingToggle(cb){
   const id = cb.dataset.id;
-  const { error } = await supa.from('jobs').update({ needs_dipping: cb.checked }).eq('id', id);
+  const { error } = await supa.rpc('set_job_dipping', { p_job_id: id, p_needs_dipping: cb.checked });
   if(error){ alert('Failed to update dipping flag: ' + error.message); cb.checked = !cb.checked; return; }
   const job = jobs.find(j => j.id === id);
   if(job) job.needs_dipping = cb.checked;
   updateStatsBar();
-  if(cb.checked && job && job.item_number){
-    await supa.from('dip_items').upsert(
-      { item_number: job.item_number, needs_dipping: true, updated_at: new Date().toISOString() },
-      { onConflict: 'item_number' }
-    );
-  }
 }
 
 // Offline-safe save: failed saves persist in localStorage and auto-retry on
@@ -1501,6 +1674,7 @@ async function refreshRowMetrics(id){
 
 // ---------- Press-and-hold reorder ----------
 jobList.addEventListener('pointerdown', (e)=>{
+  if(!isFullAccess()) return;
   if(e.target.closest('button, input, select, textarea, a, label')) return;
   // Desktop table rows only line up with the `jobs` array indices swapAdjacent() relies on
   // when nothing is filtered out — reordering while filtered would swap the wrong rows.
@@ -1624,6 +1798,7 @@ async function loadDipMemory(){
 }
 
 dipMemoryList.addEventListener('click', async (e)=>{
+  if(!isFullAccess()) return;
   const btn = e.target.closest('.dipMemoryDeleteBtn');
   if(!btn) return;
   const { error } = await supa.from('dip_items').delete().eq('item_number', btn.dataset.item);

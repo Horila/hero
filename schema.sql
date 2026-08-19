@@ -117,6 +117,41 @@ create table if not exists job_pace (
   updated_at timestamptz not null default now()
 );
 
+-- ---------- User permissions ----------
+-- One row per Supabase Auth login. permission gates write access via
+-- is_full_access() below (view_only can read everything but write nothing
+-- except job_pace); is_owner gates the manage-users edge function, which is
+-- the ONLY thing allowed to insert/update/delete this table (service-role
+-- client bypasses RLS — no direct authenticated writes are granted here).
+create table if not exists app_users (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  email text not null unique,
+  name text not null,
+  permission text not null default 'full_access'
+    check (permission in ('view_only','full_access')),
+  is_owner boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+alter table app_users enable row level security;
+revoke all on app_users from anon, authenticated;
+
+drop policy if exists "authenticated can read app_users" on app_users;
+create policy "authenticated can read app_users"
+  on app_users for select to authenticated using (true);
+
+grant select on app_users to authenticated;
+
+create or replace function is_full_access() returns boolean
+  language sql stable security definer set search_path = public as $$
+  select exists(
+    select 1 from app_users
+    where user_id = auth.uid() and permission = 'full_access'
+  )
+$$;
+revoke execute on function is_full_access() from public, anon;
+grant execute on function is_full_access() to authenticated;
+
 -- ---------- View: what the trolley boys are allowed to see ----------
 -- Only the fields they need + their own count inputs + the computed
 -- total. Views run with the OWNER's permissions, so this can read the
@@ -203,12 +238,25 @@ revoke all on counts from anon, authenticated;
 revoke all on dip_items from anon, authenticated;
 revoke all on published_day from anon, authenticated;
 
--- jobs: only your logged-in account can touch this table for real work
+-- jobs: any authenticated login can read (view_only sees everything), only
+-- full_access (per app_users) can write. See "User permissions" section below.
 drop policy if exists "authenticated full access to jobs" on jobs;
-create policy "authenticated full access to jobs"
-  on jobs for all
-  using (auth.role() = 'authenticated')
-  with check (auth.role() = 'authenticated');
+
+drop policy if exists "authenticated can read jobs" on jobs;
+create policy "authenticated can read jobs"
+  on jobs for select to authenticated using (auth.role() = 'authenticated');
+
+drop policy if exists "full access can insert jobs" on jobs;
+create policy "full access can insert jobs"
+  on jobs for insert to authenticated with check (is_full_access());
+
+drop policy if exists "full access can update jobs" on jobs;
+create policy "full access can update jobs"
+  on jobs for update to authenticated using (is_full_access()) with check (is_full_access());
+
+drop policy if exists "full access can delete jobs" on jobs;
+create policy "full access can delete jobs"
+  on jobs for delete to authenticated using (is_full_access());
 
 grant select, insert, update, delete on jobs to authenticated;
 
@@ -282,12 +330,24 @@ grant select, insert, update on counts to anon;
 -- automatically when the same am_number reappears on a later job_date.
 grant select, insert on counts to authenticated;
 
--- dip_items: your logged-in account only
+-- dip_items: same read/write split as jobs
 drop policy if exists "authenticated full access to dip_items" on dip_items;
-create policy "authenticated full access to dip_items"
-  on dip_items for all
-  using (auth.role() = 'authenticated')
-  with check (auth.role() = 'authenticated');
+
+drop policy if exists "authenticated can read dip_items" on dip_items;
+create policy "authenticated can read dip_items"
+  on dip_items for select to authenticated using (auth.role() = 'authenticated');
+
+drop policy if exists "full access can insert dip_items" on dip_items;
+create policy "full access can insert dip_items"
+  on dip_items for insert to authenticated with check (is_full_access());
+
+drop policy if exists "full access can update dip_items" on dip_items;
+create policy "full access can update dip_items"
+  on dip_items for update to authenticated using (is_full_access()) with check (is_full_access());
+
+drop policy if exists "full access can delete dip_items" on dip_items;
+create policy "full access can delete dip_items"
+  on dip_items for delete to authenticated using (is_full_access());
 
 grant select, insert, update, delete on dip_items to authenticated;
 
@@ -300,8 +360,8 @@ create policy "anyone can read published_day"
 drop policy if exists "authenticated can update published_day" on published_day;
 create policy "authenticated can update published_day"
   on published_day for update
-  using (auth.role() = 'authenticated')
-  with check (auth.role() = 'authenticated');
+  using (auth.role() = 'authenticated' and is_full_access())
+  with check (auth.role() = 'authenticated' and is_full_access());
 
 grant select on published_day to anon, authenticated;
 grant update on published_day to authenticated;
@@ -322,7 +382,7 @@ drop policy if exists "authenticated can send chat" on chat_messages;
 create policy "authenticated can send chat"
   on chat_messages for insert
   to authenticated
-  with check (auth.role() = 'authenticated');
+  with check (auth.role() = 'authenticated' and is_full_access());
 
 drop policy if exists "anon can read published-day chat" on chat_messages;
 create policy "anon can read published-day chat"
@@ -343,9 +403,15 @@ create policy "anon can send published-day chat"
 
 grant select, insert on chat_messages to anon, authenticated;
 
--- additions: your logged-in account only
+-- additions: your logged-in account only — DELIBERATELY not gated by
+-- is_full_access(), same trust level as job_pace: view_only users can use this too.
 alter table additions enable row level security;
 revoke all on additions from anon, authenticated;
+
+drop policy if exists "authenticated can read additions" on additions;
+drop policy if exists "full access can insert additions" on additions;
+drop policy if exists "full access can update additions" on additions;
+drop policy if exists "full access can delete additions" on additions;
 
 drop policy if exists "authenticated full access to additions" on additions;
 create policy "authenticated full access to additions"
@@ -354,6 +420,32 @@ create policy "authenticated full access to additions"
   with check (auth.role() = 'authenticated');
 
 grant select, insert, update, delete on additions to authenticated;
+
+-- Narrow RPCs so view_only users can toggle "done" and "dipping" on a job
+-- without a blanket full_access grant on the jobs table's UPDATE policy.
+create or replace function set_job_done(p_job_id uuid, p_done boolean) returns void
+  language sql security definer set search_path = public as $$
+  update jobs set is_done = p_done where id = p_job_id
+$$;
+revoke execute on function set_job_done(uuid, boolean) from public, anon;
+grant execute on function set_job_done(uuid, boolean) to authenticated;
+
+create or replace function set_job_dipping(p_job_id uuid, p_needs_dipping boolean) returns void
+  language plpgsql security definer set search_path = public as $$
+declare
+  v_item_number text;
+begin
+  update jobs set needs_dipping = p_needs_dipping where id = p_job_id
+    returning item_number into v_item_number;
+  if p_needs_dipping and v_item_number is not null then
+    insert into dip_items (item_number, needs_dipping, updated_at)
+    values (v_item_number, true, now())
+    on conflict (item_number) do update set needs_dipping = true, updated_at = now();
+  end if;
+end;
+$$;
+revoke execute on function set_job_dipping(uuid, boolean) from public, anon;
+grant execute on function set_job_dipping(uuid, boolean) to authenticated;
 
 -- job_pace: your logged-in account only
 alter table job_pace enable row level security;
