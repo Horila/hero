@@ -103,6 +103,20 @@
   #gradeTable{width:auto;min-width:0;font-size:11px;}
   #gradeTable th,#gradeTable td{padding:4px 12px 4px 0;}
 
+  /* ---- Compact top cards (tonnage-by-grade + pace) ----
+     Plain block .card divs always fill #app's width regardless of their
+     content's actual size — narrowing the table/inputs inside them doesn't
+     shrink the card itself. Flex items size to content instead, so wrapping
+     both in a row fixes the wasted blank space and lets them sit side by
+     side on wide screens, stacking on narrow ones via flex-wrap. */
+  .topCardsRow{display:flex;flex-wrap:wrap;align-items:flex-start;gap:14px;margin-bottom:14px;}
+  .topCardsRow .card{margin-bottom:0;width:fit-content;max-width:100%;}
+  #paceJobSelect{width:240px;max-width:100%;}
+  .paceRow2{display:flex;gap:8px;}
+  .paceRow2 > div{width:116px;}
+  .paceRow2 input{width:100%;}
+  #paceRemainingQty{width:240px;max-width:100%;}
+
   .badge{display:inline-block;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.03em;padding:2px 6px;border-radius:5px;white-space:nowrap;}
   .badge-warn{background:var(--red-bg);color:var(--red);}
   .badge-trial{background:var(--amber-bg);color:var(--amber);}
@@ -315,21 +329,23 @@
     <!-- KPIs at the top -->
     <div class="statRow" id="summaryStats"></div>
 
-    <div class="card" style="padding:10px 12px;">
-      <h2 style="font-size:12px;margin:0;font-family:var(--mono);color:var(--dim);">TONNAGE BY GRADE</h2>
-      <div class="tableScroll" style="margin-top:8px;"><table id="gradeTable"></table></div>
-    </div>
-
-    <div class="card" style="padding:10px 12px;">
-      <h2 style="font-size:12px;margin:0;font-family:var(--mono);color:var(--dim);">JOB PACE / ETA</h2>
-      <label>CURRENT JOB</label>
-      <select id="paceJobSelect"></select>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        <div><label>STARTED AT</label><input type="time" id="paceStartTime"></div>
-        <div><label>TONS/HOUR</label><input type="number" id="paceTonsPerHour" step="any"></div>
+    <div class="topCardsRow">
+      <div class="card" style="padding:10px 12px;">
+        <h2 style="font-size:12px;margin:0;font-family:var(--mono);color:var(--dim);">TONNAGE BY GRADE</h2>
+        <div class="tableScroll" style="margin-top:8px;"><table id="gradeTable"></table></div>
       </div>
-      <label>MOULDS LEFT ON THIS JOB (optional — corrects for downtime)</label>
-      <input type="number" id="paceRemainingQty" step="1" placeholder="leave blank = full job">
+
+      <div class="card" style="padding:10px 12px;">
+        <h2 style="font-size:12px;margin:0;font-family:var(--mono);color:var(--dim);">JOB PACE / ETA</h2>
+        <label>CURRENT JOB</label>
+        <select id="paceJobSelect"></select>
+        <div class="paceRow2">
+          <div><label>STARTED AT</label><input type="time" id="paceStartTime"></div>
+          <div><label>TONS/HOUR</label><input type="number" id="paceTonsPerHour" step="any"></div>
+        </div>
+        <label>MOULDS LEFT ON THIS JOB (optional — corrects for downtime)</label>
+        <input type="number" id="paceRemainingQty" step="1" placeholder="leave blank = full job">
+      </div>
     </div>
 
     <!-- Desktop-only: search + quick filters over today's jobs -->
