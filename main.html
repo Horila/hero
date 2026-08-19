@@ -682,15 +682,28 @@ saveAllBtn.addEventListener('click', async ()=>{
     needs_dipping: !!dipMemory[j.item_number]
   })).filter(r => r.am_number); // AM number is the join key, refuse to save without it
 
-  if(rows.length !== extractedJobs.length){
-    setStatus('Some rows skipped — AM number is required to save', 'err');
+  const missingCount = extractedJobs.length - rows.length;
+
+  // Postgres rejects an upsert if two rows in the same batch target the same
+  // conflict key — keep the last occurrence when the same AM number/date
+  // shows up twice (e.g. OCR misread a job number the same way on two rows).
+  const dedupedByKey = new Map();
+  rows.forEach(r => dedupedByKey.set(`${r.am_number}|${r.job_date}`, r));
+  const dedupedRows = [...dedupedByKey.values()];
+  const dupCount = rows.length - dedupedRows.length;
+
+  if(missingCount || dupCount){
+    const msgs = [];
+    if(missingCount) msgs.push(`${missingCount} row(s) skipped — AM number is required to save`);
+    if(dupCount) msgs.push(`${dupCount} duplicate row(s) skipped — same AM number/date appeared twice`);
+    setStatus(msgs.join('; '), 'err');
   }
 
-  const { data: savedRows, error } = await supa.from('jobs').upsert(rows, { onConflict: 'am_number,job_date' }).select('id, am_number, job_date');
+  const { data: savedRows, error } = await supa.from('jobs').upsert(dedupedRows, { onConflict: 'am_number,job_date' }).select('id, am_number, job_date');
   if(error){ setStatus('Save failed: ' + error.message, 'err'); return; }
 
   const synced = await syncCountsFromPreviousDay(savedRows || []);
-  setStatus(rows.length + ' job(s) saved' + (synced ? ` — ${synced} count(s) carried over from a previous day` : ''), 'ok');
+  setStatus(dedupedRows.length + ' job(s) saved' + (synced ? ` — ${synced} count(s) carried over from a previous day` : ''), 'ok');
   extractedJobs = [];
   reviewList.innerHTML = '';
   saveAllBtn.style.display = 'none';
