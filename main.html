@@ -586,11 +586,19 @@ function renderPaceCard(force){
 
 // Combine the edited HH:MM with the currently-selected day into a full timestamp, same shape
 // as other day-scoped saves in this file. Local time as entered, not UTC.
+//
+// Built from numeric Date() args, not a "YYYY-MM-DDTHH:mm:ss" string — a no-timezone
+// date-time STRING is spec'd to parse as local time, but that's inconsistently
+// implemented across engines (Safari/WebKit has a long history of treating it as UTC
+// instead). Numeric args are unambiguous local time on every browser, which matters here
+// since pace is synced across devices that may not share a JS engine.
 function composeStartedAt(){
   if(!paceStartTime.value) return null;
   const day = jobDatePicker.value || todayStr();
-  const d = new Date(`${day}T${paceStartTime.value}:00`);
-  return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+  const [y, mo, d] = day.split('-').map(Number);
+  const [h, mi] = paceStartTime.value.split(':').map(Number);
+  const dt = new Date(y, mo - 1, d, h, mi, 0);
+  return Number.isFinite(dt.getTime()) ? dt.toISOString() : null;
 }
 
 async function loadPace(){
