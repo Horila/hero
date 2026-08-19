@@ -71,9 +71,8 @@
   #pushLiveBtn.live{border-color:var(--green);color:var(--green);}
   #pushLiveBtn.live .liveDot{background:var(--green);box-shadow:0 0 6px var(--green);}
 
-  /* ---- Stat tiles (KPIs, pinned at top) ---- */
-  .statRow{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px;}
-  @media (min-width:420px){ .statRow{grid-template-columns:repeat(4,1fr);} }
+  /* ---- Stat tiles (KPIs, stacked next to the additions card) ---- */
+  .statStack{display:flex;flex-direction:column;gap:8px;width:180px;max-width:100%;}
   .statTile{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px 10px;box-shadow:var(--shadow);}
   .statTile .num{font-family:var(--mono);font-size:22px;font-weight:800;line-height:1;}
   .statTile .lbl{font-family:var(--mono);font-size:9.5px;color:var(--dim);letter-spacing:.04em;margin-top:5px;text-transform:uppercase;}
@@ -111,6 +110,7 @@
      side on wide screens, stacking on narrow ones via flex-wrap. */
   .topCardsRow{display:flex;flex-wrap:wrap;align-items:flex-start;gap:14px;margin-bottom:14px;}
   .topCardsRow .card{margin-bottom:0;width:fit-content;max-width:100%;}
+  .topCardsRow .eqCard{width:280px;max-width:100%;}
   #paceJobSelect{width:240px;max-width:100%;}
   .paceRow2{display:flex;gap:8px;}
   .paceRow2 > div{width:116px;}
@@ -165,9 +165,8 @@
   }
 
   #additionsBox{
-    position:fixed;bottom:12px;right:12px;z-index:10;background:var(--panel);
+    background:var(--panel);
     border:1px solid var(--line);border-radius:var(--radius);padding:10px;
-    width:fit-content;max-width:calc(100vw - 24px);
     box-shadow:var(--shadow);
   }
   #additionsBox .additionsHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
@@ -213,7 +212,6 @@
   /* ---- Desktop dashboard view (toggled via body.desktop-view) ---- */
   .desktopToolbar{display:none;}
   body.desktop-view #app{max-width:1400px;}
-  body.desktop-view .statRow{grid-template-columns:repeat(5,1fr);}
   .statTile.stillMaking{display:none;}
   body.desktop-view .statTile.stillMaking{display:block;}
   body.desktop-view .desktopToolbar{display:flex;gap:10px;align-items:center;padding:10px 12px;}
@@ -223,13 +221,6 @@
   .chip.active{background:var(--amber-bg);border-color:var(--amber-dim);color:var(--amber);}
 
   .mainSplit{display:block;}
-  .sidebarCol{display:none;min-width:220px;}
-  body.desktop-view .sidebarCol{display:block;}
-  .alertPanel h3{font-size:10.5px;margin:0 0 8px 0;font-family:var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:.03em;}
-  .alertRow{display:flex;justify-content:space-between;gap:8px;padding:5px 0;font-family:var(--mono);font-size:11.5px;border-bottom:1px solid var(--line);cursor:pointer;}
-  .alertRow:last-child{border-bottom:none;}
-  .alertRow:hover{color:var(--amber);}
-  .alertEmpty{font-family:var(--mono);font-size:11px;color:var(--dim2);padding:2px 0;}
 
   .desktopTable{width:100%;border-collapse:collapse;font-size:12px;}
   .desktopTable th,.desktopTable td{padding:7px 8px;border-bottom:1px solid var(--line);font-family:var(--mono);white-space:nowrap;text-align:left;}
@@ -240,8 +231,6 @@
   .desktopTable tr.jobRow.rowShort > td:first-child{border-left-color:var(--red);}
   .desktopTable tr.jobRow.rowMaking > td:first-child{border-left-color:var(--amber);border-left-style:dashed;}
   .desktopTable tr.jobRow.dragging{transform:none;box-shadow:none;background:var(--amber-bg);}
-  .desktopTable tr.jobRow.rowFlash{animation:rowFlash 1.2s ease;}
-  @keyframes rowFlash{ 0%{background:var(--amber-bg);} 100%{background:transparent;} }
   .desktopTable .dragGrip{color:var(--dim2);cursor:grab;text-align:center;}
   .desktopTable input{padding:4px 6px;font-size:12px;margin:0;min-width:60px;}
   .desktopTable .roText{color:var(--text);}
@@ -262,29 +251,6 @@
 </div>
 
 <button id="refreshBtn">↻ Refresh</button>
-
-<div id="additionsBox">
-  <div class="additionsHead">
-    <span class="additionsTitle">⚗ ADDITIONS</span>
-    <button id="additionsToggleBtn">✎</button>
-  </div>
-  <div id="additionsEdit" style="display:none;">
-    <div class="additionRow" data-el="Cr"><label>Cr</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
-    <div class="additionRow" data-el="Cu"><label>Cu</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
-    <div class="additionRow" data-el="Mo"><label>Mo</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
-    <div class="additionRow" data-el="Sn"><label>Sn</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
-    <div class="additionRow" data-el="Ni"><label>Ni</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
-    <div class="additionRow" data-el="Gr"><label>Gr</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
-    <div class="additionRow" data-el="Ti"><label>Ti</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
-  </div>
-  <div id="additionsResults">
-    <table>
-      <thead><tr><th></th><th>G/C</th><th></th><th>Every Laddle</th></tr></thead>
-      <tbody id="additionsResultsBody"></tbody>
-    </table>
-    <div id="additionsEmpty">No additions entered</div>
-  </div>
-</div>
 
 <button id="chatToggleBtn">💬<span id="chatDot"></span></button>
 <div id="chatPanel">
@@ -325,16 +291,13 @@
       <button id="pushLiveBtn"><span class="liveDot"></span><span id="pushLiveLabel">Push Live</span></button>
     </div>
 
-    <!-- KPIs at the top -->
-    <div class="statRow" id="summaryStats"></div>
-
     <div class="topCardsRow">
       <div class="card" style="padding:10px 12px;">
         <h2 style="font-size:12px;margin:0;font-family:var(--mono);color:var(--dim);">TONNAGE BY GRADE</h2>
         <div class="tableScroll" style="margin-top:8px;"><table id="gradeTable"></table></div>
       </div>
 
-      <div class="card" style="padding:10px 12px;">
+      <div class="card eqCard" style="padding:10px 12px;">
         <h2 style="font-size:12px;margin:0;font-family:var(--mono);color:var(--dim);">JOB PACE / ETA</h2>
         <label>CURRENT JOB</label>
         <select id="paceJobSelect"></select>
@@ -342,11 +305,34 @@
           <div><label>STARTED AT</label><input type="time" id="paceStartTime"></div>
           <div><label>TONS/HOUR</label><input type="number" id="paceTonsPerHour" step="any"></div>
         </div>
-        <label>MOULDS LEFT ON THIS JOB (optional — corrects for downtime)</label>
+        <label>CORES LEFT ON THIS JOB (optional — corrects for downtime)</label>
         <input type="number" id="paceRemainingQty" step="1" placeholder="leave blank = full job">
       </div>
 
-      <div class="card sidebarCol" id="desktopSidebar"></div>
+      <div id="additionsBox" class="eqCard">
+        <div class="additionsHead">
+          <span class="additionsTitle">⚗ ADDITIONS</span>
+          <button id="additionsToggleBtn">✎</button>
+        </div>
+        <div id="additionsEdit" style="display:none;">
+          <div class="additionRow" data-el="Cr"><label>Cr</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
+          <div class="additionRow" data-el="Cu"><label>Cu</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
+          <div class="additionRow" data-el="Mo"><label>Mo</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
+          <div class="additionRow" data-el="Sn"><label>Sn</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
+          <div class="additionRow" data-el="Ni"><label>Ni</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
+          <div class="additionRow" data-el="Gr"><label>Gr</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
+          <div class="additionRow" data-el="Ti"><label>Ti</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
+        </div>
+        <div id="additionsResults">
+          <table>
+            <thead><tr><th></th><th>G/C</th><th></th><th>Every Laddle</th></tr></thead>
+            <tbody id="additionsResultsBody"></tbody>
+          </table>
+          <div id="additionsEmpty">No additions entered</div>
+        </div>
+      </div>
+
+      <div class="statStack" id="summaryStats"></div>
     </div>
 
     <!-- Desktop-only: search + quick filters over today's jobs -->
@@ -538,6 +524,10 @@ function effectiveCurrentJobId(){
   return firstNotDone ? firstNotDone.id : null;
 }
 
+// Fixed changeover gap between one job finishing and the next one starting —
+// roughly how long swapping moulds/dies over actually takes on the floor.
+const JOB_CHANGEOVER_MS = 7 * 60 * 1000;
+
 // Pure function of jobs (already sort_order-sorted) + pace state -> { jobId: startTimeMs }.
 // No ETA at all if tons/hour or start time is missing/non-finite (avoids Infinity/NaN).
 function computeEtas(){
@@ -555,12 +545,15 @@ function computeEtas(){
     if(j.is_done) continue; // finished/irrelevant to the projection
     etas[j.id] = t;
     let ton = j.tonnage || 0;
-    // Current job only: if Horatio's corrected the remaining mould count (e.g. after
+    // Current job only: if Horatio's corrected the remaining core count (e.g. after
     // downtime), scale its tonnage down proportionally instead of assuming the full job.
+    // Ratio-based, so it's doubles-safe automatically — j.tonnage is already halved for
+    // doubles jobs (via effective_qty) while j.planned_qty stays raw cores either way, so
+    // tonnage/planned_qty is "tons per core" with the doubles factor already baked in.
     if(i === idx && pace.remaining_qty != null && j.planned_qty){
       ton = ton * (pace.remaining_qty / j.planned_qty);
     }
-    t += ton / tph * 3600000;
+    t += ton / tph * 3600000 + JOB_CHANGEOVER_MS;
   }
   return etas;
 }
@@ -777,7 +770,6 @@ const jobList = document.getElementById('jobList');
 const jobsEmpty = document.getElementById('jobsEmpty');
 const jobSearchInput = document.getElementById('jobSearch');
 const filterChips = document.getElementById('filterChips');
-const desktopSidebar = document.getElementById('desktopSidebar');
 let desktopFilter = 'all';
 let desktopSearch = '';
 
@@ -792,25 +784,6 @@ filterChips.addEventListener('click', (e)=>{
   desktopFilter = chip.dataset.filter;
   [...filterChips.children].forEach(c => c.classList.toggle('active', c === chip));
   renderJobs();
-});
-
-// Sidebar alert rows jump to their job in the table. If a filter/search is currently
-// hiding it, clear that first so the row actually exists in the DOM to scroll to.
-desktopSidebar.addEventListener('click', (e)=>{
-  const row = e.target.closest('.alertRow');
-  if(!row) return;
-  const id = row.dataset.jump;
-  if(desktopFilter !== 'all' || desktopSearch){
-    desktopFilter = 'all'; desktopSearch = '';
-    jobSearchInput.value = '';
-    [...filterChips.children].forEach(c => c.classList.toggle('active', c.dataset.filter === 'all'));
-    renderJobs();
-  }
-  const target = jobList.querySelector(`.jobRow[data-id="${id}"]`);
-  if(!target) return;
-  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  target.classList.add('rowFlash');
-  setTimeout(()=> target.classList.remove('rowFlash'), 1200);
 });
 
 const fileInput = document.getElementById('fileInput');
@@ -1216,15 +1189,10 @@ function tonnageUntilGradeChange(sortedJobs){
 
 function updateStatsBar(){
   const totalTonnage = jobs.filter(r => r.is_done).reduce((sum, r) => sum + (r.tonnage || 0), 0);
-  const shortJobs = jobs.filter(isShort);
-  const dippingJobs = jobs.filter(r => r.needs_dipping);
-  const makingJobs = jobs.filter(r => r.still_making);
   const tonnageLeft = tonnageUntilGradeChange(jobs);
   summaryStats.innerHTML = `
     <div class="statTile neutral"><div class="num">${jobs.length}</div><div class="lbl">Jobs today</div></div>
     <div class="statTile neutral"><div class="num">${totalTonnage.toFixed(1)}t</div><div class="lbl">Tonnage used so far</div></div>
-    <div class="statTile ${shortJobs.length ? 'warn' : 'ok'}"><div class="num">${shortJobs.length}</div><div class="lbl">Short of plan</div></div>
-    <div class="statTile ${dippingJobs.length ? 'warn' : 'ok'}"><div class="num">${dippingJobs.length}</div><div class="lbl">Dipping due</div></div>
     <div class="statTile stillMaking neutral"><div class="num">${tonnageLeft.toFixed(1)}t</div><div class="lbl">Left till grade change</div></div>
   `;
 
@@ -1235,20 +1203,6 @@ function updateStatsBar(){
   });
   gradeTable.innerHTML = '<tr><th>Grade</th><th>Tonnage</th></tr>' +
     Object.entries(gradeTotals).map(([g,t])=>`<tr><td>${esc(g)}</td><td class="gradeTotal">${t.toFixed(2)} t</td></tr>`).join('');
-
-  renderDesktopSidebar(shortJobs, dippingJobs, makingJobs);
-}
-
-// Desktop-only alert panels — hidden via CSS on mobile, but cheap enough to always keep current.
-function renderDesktopSidebar(shortJobs, dippingJobs, makingJobs){
-  const list = (items, emptyMsg) => items.length
-    ? items.map(j => `<div class="alertRow" data-jump="${j.id}"><span>${esc(j.am_number)}</span><span>${esc(j.grade) || '—'}</span></div>`).join('')
-    : `<div class="alertEmpty">${emptyMsg}</div>`;
-  desktopSidebar.innerHTML = `
-    <div class="alertPanel"><h3>Short of plan</h3>${list(shortJobs, 'None — all on target')}</div>
-    <div class="alertPanel" style="margin-top:14px;"><h3>Dipping due</h3>${list(dippingJobs, 'None')}</div>
-    <div class="alertPanel" style="margin-top:14px;"><h3>Still making</h3>${list(makingJobs, 'None')}</div>
-  `;
 }
 
 function renderJobs(){
