@@ -699,6 +699,22 @@ saveAllBtn.addEventListener('click', async ()=>{
     setStatus(msgs.join('; '), 'err');
   }
 
+  // sort_order's DB default (whole-second epoch) can tie across every row in one scan
+  // batch, so the list order after save falls back to whatever order Postgres feels
+  // like returning ties in — not scan order. Assign explicit, strictly-increasing
+  // sort_order values ourselves for genuinely new jobs (preserving scan order), and
+  // carry forward the existing value for jobs already on this date so re-scanning
+  // a job never moves it in the list.
+  const { data: existingForDate } = await supa.from('jobs')
+    .select('am_number, sort_order')
+    .eq('job_date', jobDate)
+    .in('am_number', dedupedRows.map(r => r.am_number));
+  const existingSortOrderByAm = Object.fromEntries((existingForDate || []).map(j => [j.am_number, j.sort_order]));
+  let nextNewSortOrder = Date.now() / 1000;
+  dedupedRows.forEach(r => {
+    r.sort_order = r.am_number in existingSortOrderByAm ? existingSortOrderByAm[r.am_number] : nextNewSortOrder++;
+  });
+
   const { data: savedRows, error } = await supa.from('jobs').upsert(dedupedRows, { onConflict: 'am_number,job_date' }).select('id, am_number, job_date');
   if(error){ setStatus('Save failed: ' + error.message, 'err'); return; }
 
