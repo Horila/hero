@@ -55,6 +55,11 @@
   .topBar .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--amber);box-shadow:0 0 8px var(--amber);}
   #themeToggle, #viewToggle{width:auto;padding:7px 11px;font-size:11px;font-family:var(--mono);}
 
+  #refreshBtn{
+    position:fixed;top:56px;right:12px;z-index:15;width:auto;padding:6px 10px;font-size:11px;
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-sm);box-shadow:var(--shadow);
+  }
+
   /* ---- Date chip (small dropdown-style date picker, top of page) ---- */
   .dateRow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
   .dateChip{display:inline-flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:5px 10px 5px 12px;}
@@ -142,17 +147,50 @@
     --red-bg:rgba(192,57,43,.10); --green-bg:rgba(47,143,82,.12);
   }
 
-  #radioBox{
+  #additionsBox{
     position:fixed;bottom:12px;right:12px;z-index:10;background:var(--panel);
-    border:1px solid var(--line);border-radius:var(--radius);padding:10px;width:180px;
+    border:1px solid var(--line);border-radius:var(--radius);padding:10px;
+    width:fit-content;max-width:calc(100vw - 24px);
     box-shadow:var(--shadow);
   }
-  #radioBox .radioHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
-  #radioBox .radioTitle{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.03em;}
-  #radioCollapseBtn{width:auto;padding:2px 6px;font-size:12px;background:transparent;border:none;color:var(--dim);}
-  #radioBox.collapsed .radioBody{display:none;}
-  #radioPlayBtn{width:100%;margin-top:6px;padding:8px;font-size:13px;}
-  #radioUrlInput{font-size:11px;padding:6px;margin-top:0;}
+  #additionsBox .additionsHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  #additionsBox .additionsTitle{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.03em;}
+  #additionsToggleBtn{width:auto;padding:2px 8px;font-size:12px;background:transparent;border:none;color:var(--dim);}
+  .additionRow{display:grid;grid-template-columns:22px 70px 70px;gap:4px;align-items:center;margin-top:4px;}
+  .additionRow label{margin:0;font-size:11px;color:var(--text);text-transform:none;font-family:var(--sans);}
+  .additionRow input{width:100%;font-size:11px;padding:5px;margin-top:0;box-sizing:border-box;}
+  #additionsResults{overflow-x:auto;}
+  #additionsResults table{width:auto;min-width:0;font-size:11px;border-collapse:collapse;}
+  #additionsResults th,#additionsResults td{padding:4px 8px 4px 0;border-bottom:1px solid var(--line);font-family:var(--mono);white-space:nowrap;text-align:left;}
+  #additionsResults th{color:var(--dim);font-weight:600;font-size:9px;text-transform:uppercase;letter-spacing:.03em;}
+  #additionsEmpty{font-family:var(--mono);font-size:11px;color:var(--dim);text-align:center;padding:8px 0;}
+
+  #chatToggleBtn{
+    position:fixed;bottom:12px;left:12px;z-index:10;width:44px;height:44px;padding:0;
+    border-radius:50%;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow);
+    font-size:18px;display:flex;align-items:center;justify-content:center;
+  }
+  #chatDot{
+    position:absolute;top:2px;right:2px;width:11px;height:11px;border-radius:50%;
+    background:var(--red);border:2px solid var(--bg);display:none;
+  }
+  #chatDot.show{display:block;}
+  #chatPanel{
+    position:fixed;bottom:64px;left:12px;z-index:10;background:var(--panel);
+    border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);
+    width:260px;max-width:calc(100vw - 24px);display:none;flex-direction:column;
+  }
+  #chatPanel.open{display:flex;}
+  #chatPanel .chatHead{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.03em;padding:10px 10px 0 10px;}
+  #chatMessages{max-height:260px;overflow-y:auto;padding:8px 10px;display:flex;flex-direction:column;gap:6px;}
+  .chatMsg{max-width:85%;padding:6px 9px;border-radius:10px;font-size:12px;line-height:1.35;}
+  .chatMsg .chatMeta{font-family:var(--mono);font-size:9px;color:var(--dim2);margin-bottom:2px;}
+  .chatMsg.mine{align-self:flex-end;background:var(--amber-bg);}
+  .chatMsg.theirs{align-self:flex-start;background:var(--panel2);}
+  #chatEmpty{font-family:var(--mono);font-size:11px;color:var(--dim);text-align:center;padding:10px 0;}
+  .chatInputRow{display:flex;gap:6px;padding:8px 10px 10px 10px;border-top:1px solid var(--line);}
+  .chatInputRow input{margin-top:0;}
+  #chatSendBtn{width:auto;padding:8px 12px;}
 
   /* ---- Desktop dashboard view (toggled via body.desktop-view) ---- */
   .desktopToolbar{display:none;}
@@ -206,16 +244,40 @@
   </div>
 </div>
 
-<div id="radioBox">
-  <div class="radioHead">
-    <span class="radioTitle">📻 RADIO</span>
-    <button id="radioCollapseBtn">▁</button>
+<button id="refreshBtn">↻ Refresh</button>
+
+<div id="additionsBox">
+  <div class="additionsHead">
+    <span class="additionsTitle">⚗ ADDITIONS</span>
+    <button id="additionsToggleBtn">✎</button>
   </div>
-  <div class="radioBody">
-    <input type="text" id="radioUrlInput" placeholder="stream URL">
-    <button id="radioPlayBtn">▶ Play</button>
+  <div id="additionsEdit" style="display:none;">
+    <div class="additionRow" data-el="Cr"><label>Cr</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
+    <div class="additionRow" data-el="Cu"><label>Cu</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
+    <div class="additionRow" data-el="Mo"><label>Mo</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
+    <div class="additionRow" data-el="Sn"><label>Sn</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
+    <div class="additionRow" data-el="Ni"><label>Ni</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
+    <div class="additionRow" data-el="Gr"><label>Gr</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
+    <div class="additionRow" data-el="Ti"><label>Ti</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
   </div>
-  <audio id="radioAudio" preload="none"></audio>
+  <div id="additionsResults">
+    <table>
+      <thead><tr><th></th><th>G/C</th><th></th><th>Every Laddle</th></tr></thead>
+      <tbody id="additionsResultsBody"></tbody>
+    </table>
+    <div id="additionsEmpty">No additions entered</div>
+  </div>
+</div>
+
+<button id="chatToggleBtn">💬<span id="chatDot"></span></button>
+<div id="chatPanel">
+  <div class="chatHead">TROLLEY CHAT</div>
+  <div id="chatMessages"></div>
+  <div id="chatEmpty" style="display:none;">No messages yet</div>
+  <div class="chatInputRow">
+    <input type="text" id="chatInput" placeholder="Message the trolley boys…">
+    <button id="chatSendBtn">Send</button>
+  </div>
 </div>
 
 <div id="app">
@@ -250,10 +312,7 @@
     <div class="statRow" id="summaryStats"></div>
 
     <div class="card" style="padding:10px 12px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <h2 style="font-size:12px;margin:0;font-family:var(--mono);color:var(--dim);">TONNAGE BY GRADE</h2>
-        <button id="refreshBtn" style="width:auto;padding:6px 10px;font-size:11px;">↻ Refresh</button>
-      </div>
+      <h2 style="font-size:12px;margin:0;font-family:var(--mono);color:var(--dim);">TONNAGE BY GRADE</h2>
       <div class="tableScroll" style="margin-top:8px;"><table id="gradeTable"></table></div>
     </div>
 
@@ -340,34 +399,148 @@ viewToggle.addEventListener('click', ()=>{
   updateStatsBar();
 });
 
-// ---------- Radio ----------
-const radioBox = document.getElementById('radioBox');
-const radioCollapseBtn = document.getElementById('radioCollapseBtn');
-const radioUrlInput = document.getElementById('radioUrlInput');
-const radioPlayBtn = document.getElementById('radioPlayBtn');
-const radioAudio = document.getElementById('radioAudio');
+// ---------- Additions ----------
+const ADDITION_ELEMENTS = ['Cr','Cu','Mo','Sn','Ni','Gr','Ti'];
+const additionsToggleBtn = document.getElementById('additionsToggleBtn');
+const additionsEdit = document.getElementById('additionsEdit');
+const additionsResults = document.getElementById('additionsResults');
+const additionsResultsBody = document.getElementById('additionsResultsBody');
+const additionsEmpty = document.getElementById('additionsEmpty');
 
-radioUrlInput.value = localStorage.getItem('coreCountingRadioUrl') || 'https://ice1.somafm.com/groovesalad-128-mp3';
-if(localStorage.getItem('coreCountingRadioCollapsed') === 'true') radioBox.classList.add('collapsed');
+let additionsState = {};
+try { additionsState = JSON.parse(localStorage.getItem('coreCountingAdditions')) || {}; } catch(e) { additionsState = {}; }
 
-radioCollapseBtn.addEventListener('click', ()=>{
-  radioBox.classList.toggle('collapsed');
-  localStorage.setItem('coreCountingRadioCollapsed', radioBox.classList.contains('collapsed'));
+ADDITION_ELEMENTS.forEach(el => {
+  const row = additionsEdit.querySelector(`.additionRow[data-el="${el}"]`);
+  const saved = additionsState[el] || {};
+  if(saved.perTonne !== undefined && saved.perTonne !== '') row.querySelector('.addPerTonne').value = saved.perTonne;
+  if(saved.perLaddle !== undefined && saved.perLaddle !== '') row.querySelector('.addPerLaddle').value = saved.perLaddle;
 });
 
-radioPlayBtn.addEventListener('click', ()=>{
-  if(radioAudio.paused){
-    const url = radioUrlInput.value.trim();
-    if(!url) return;
-    localStorage.setItem('coreCountingRadioUrl', url);
-    if(radioAudio.src !== url) radioAudio.src = url;
-    radioAudio.play().catch(err => { radioPlayBtn.textContent = '⚠ ' + err.message; });
-    radioPlayBtn.textContent = '⏸ Pause';
-  } else {
-    radioAudio.pause();
-    radioPlayBtn.textContent = '▶ Play';
+function renderAdditionsResults(){
+  additionsResultsBody.innerHTML = '';
+  let anyData = false;
+  ADDITION_ELEMENTS.forEach(el => {
+    const row = additionsEdit.querySelector(`.additionRow[data-el="${el}"]`);
+    const perTonne = parseFloat(row.querySelector('.addPerTonne').value);
+    const perLaddle = parseFloat(row.querySelector('.addPerLaddle').value);
+    if(!Number.isFinite(perTonne) || !Number.isFinite(perLaddle)) return;
+    anyData = true;
+    const gcLaddle = 3 * perTonne + perLaddle;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${el}</td><td>${gcLaddle}</td><td>${el}</td><td>${perLaddle}</td>`;
+    additionsResultsBody.appendChild(tr);
+  });
+  additionsEmpty.style.display = anyData ? 'none' : 'block';
+  additionsResults.querySelector('table').style.display = anyData ? '' : 'none';
+}
+
+function saveAdditionsState(){
+  const state = {};
+  ADDITION_ELEMENTS.forEach(el => {
+    const row = additionsEdit.querySelector(`.additionRow[data-el="${el}"]`);
+    state[el] = {
+      perTonne: row.querySelector('.addPerTonne').value,
+      perLaddle: row.querySelector('.addPerLaddle').value
+    };
+  });
+  localStorage.setItem('coreCountingAdditions', JSON.stringify(state));
+}
+
+additionsEdit.addEventListener('input', ()=>{
+  saveAdditionsState();
+  renderAdditionsResults();
+});
+
+additionsToggleBtn.addEventListener('click', ()=>{
+  const editing = additionsEdit.style.display !== 'none';
+  additionsEdit.style.display = editing ? 'none' : 'block';
+  additionsResults.style.display = editing ? 'block' : 'none';
+  additionsToggleBtn.textContent = editing ? '✎' : '✓';
+});
+
+renderAdditionsResults();
+
+// ---------- Chat ----------
+const chatToggleBtn = document.getElementById('chatToggleBtn');
+const chatDot = document.getElementById('chatDot');
+const chatPanel = document.getElementById('chatPanel');
+const chatMessages = document.getElementById('chatMessages');
+const chatEmpty = document.getElementById('chatEmpty');
+const chatInput = document.getElementById('chatInput');
+const chatSendBtn = document.getElementById('chatSendBtn');
+const CHAT_SEEN_KEY = 'coreCountingChatSeenAdmin';
+
+let chatOpen = false;
+let chatPollTimer = null;
+let lastChatMessages = [];
+
+function updateChatDot(){
+  const seen = localStorage.getItem(CHAT_SEEN_KEY) || '';
+  const unread = lastChatMessages.some(m => m.sender_role === 'trolley' && m.created_at > seen);
+  chatDot.classList.toggle('show', unread && !chatOpen);
+}
+
+function markChatSeen(){
+  if(!lastChatMessages.length) return;
+  localStorage.setItem(CHAT_SEEN_KEY, lastChatMessages[lastChatMessages.length - 1].created_at);
+  chatDot.classList.remove('show');
+}
+
+function renderChatMessages(){
+  if(!lastChatMessages.length){
+    chatMessages.innerHTML = '';
+    chatEmpty.style.display = 'block';
+    return;
   }
+  chatEmpty.style.display = 'none';
+  chatMessages.innerHTML = lastChatMessages.map(m => {
+    const mine = m.sender_role === 'admin';
+    const who = mine ? 'You' : (m.sender_name || 'Trolley');
+    const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return `<div class="chatMsg ${mine ? 'mine' : 'theirs'}"><div class="chatMeta">${esc(who)} · ${time}</div>${esc(m.body)}</div>`;
+  }).join('');
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+async function loadChat(){
+  const day = jobDatePicker.value || todayStr();
+  const { data, error } = await supa.from('chat_messages').select('*').eq('job_date', day).order('created_at', { ascending: true });
+  if(error) return;
+  lastChatMessages = data || [];
+  renderChatMessages();
+  updateChatDot();
+  if(chatOpen) markChatSeen();
+}
+
+function startChatPolling(){
+  loadChat();
+  clearInterval(chatPollTimer);
+  chatPollTimer = setInterval(loadChat, 12000);
+}
+
+function stopChatPolling(){
+  clearInterval(chatPollTimer);
+}
+
+chatToggleBtn.addEventListener('click', ()=>{
+  chatOpen = !chatOpen;
+  chatPanel.classList.toggle('open', chatOpen);
+  if(chatOpen){ markChatSeen(); loadChat(); }
 });
+
+async function sendChatMessage(){
+  const body = chatInput.value.trim();
+  if(!body) return;
+  const day = jobDatePicker.value || todayStr();
+  chatInput.value = '';
+  const { error } = await supa.from('chat_messages').insert({ job_date: day, sender_role: 'admin', sender_name: 'Horatio', body });
+  if(error){ alert('Message failed to send: ' + error.message); return; }
+  loadChat();
+}
+
+chatSendBtn.addEventListener('click', sendChatMessage);
+chatInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); sendChatMessage(); } });
 
 const loginScreen = document.getElementById('loginScreen');
 const mainScreen = document.getElementById('mainScreen');
@@ -437,7 +610,7 @@ const dipMemoryList = document.getElementById('dipMemoryList');
 const dipMemoryEmpty = document.getElementById('dipMemoryEmpty');
 
 jobDatePicker.value = todayStr();
-jobDatePicker.addEventListener('change', ()=>{ loadJobs(); updatePushLiveButton(); });
+jobDatePicker.addEventListener('change', ()=>{ loadJobs(); updatePushLiveButton(); loadChat(); });
 refreshBtn.addEventListener('click', ()=>{ loadJobs(); loadDipMemory(); loadPublishedDay(); });
 
 let publishedDay = null;
@@ -480,9 +653,11 @@ async function checkSession(){
     loadJobs();
     loadDipMemory();
     loadPublishedDay();
+    startChatPolling();
   } else {
     loginScreen.style.display = 'block';
     mainScreen.style.display = 'none';
+    stopChatPolling();
   }
 }
 
