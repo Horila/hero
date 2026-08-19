@@ -407,15 +407,48 @@ const additionsResults = document.getElementById('additionsResults');
 const additionsResultsBody = document.getElementById('additionsResultsBody');
 const additionsEmpty = document.getElementById('additionsEmpty');
 
-let additionsState = {};
-try { additionsState = JSON.parse(localStorage.getItem('coreCountingAdditions')) || {}; } catch(e) { additionsState = {}; }
+const additionSaveTimers = {};
 
-ADDITION_ELEMENTS.forEach(el => {
+async function loadAdditions(){
+  const { data, error } = await supa.from('additions').select('*');
+  if(error) return;
+  (data || []).forEach(row => {
+    const rowEl = additionsEdit.querySelector(`.additionRow[data-el="${row.element}"]`);
+    if(!rowEl) return;
+    const tonneInput = rowEl.querySelector('.addPerTonne');
+    const laddleInput = rowEl.querySelector('.addPerLaddle');
+    if(document.activeElement !== tonneInput) tonneInput.value = row.per_tonne ?? '';
+    if(document.activeElement !== laddleInput) laddleInput.value = row.per_laddle ?? '';
+  });
+  renderAdditionsResults();
+}
+
+function queueAdditionSave(el){
+  clearTimeout(additionSaveTimers[el]);
+  additionSaveTimers[el] = setTimeout(()=> performAdditionSave(el), 500);
+}
+
+async function performAdditionSave(el){
   const row = additionsEdit.querySelector(`.additionRow[data-el="${el}"]`);
-  const saved = additionsState[el] || {};
-  if(saved.perTonne !== undefined && saved.perTonne !== '') row.querySelector('.addPerTonne').value = saved.perTonne;
-  if(saved.perLaddle !== undefined && saved.perLaddle !== '') row.querySelector('.addPerLaddle').value = saved.perLaddle;
-});
+  const perTonne = parseFloat(row.querySelector('.addPerTonne').value);
+  const perLaddle = parseFloat(row.querySelector('.addPerLaddle').value);
+  await supa.from('additions').upsert({
+    element: el,
+    per_tonne: Number.isFinite(perTonne) ? perTonne : null,
+    per_laddle: Number.isFinite(perLaddle) ? perLaddle : null,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'element' });
+}
+
+let additionsPollTimer = null;
+function startAdditionsPolling(){
+  loadAdditions();
+  clearInterval(additionsPollTimer);
+  additionsPollTimer = setInterval(loadAdditions, 15000);
+}
+function stopAdditionsPolling(){
+  clearInterval(additionsPollTimer);
+}
 
 function renderAdditionsResults(){
   additionsResultsBody.innerHTML = '';
@@ -435,21 +468,11 @@ function renderAdditionsResults(){
   additionsResults.querySelector('table').style.display = anyData ? '' : 'none';
 }
 
-function saveAdditionsState(){
-  const state = {};
-  ADDITION_ELEMENTS.forEach(el => {
-    const row = additionsEdit.querySelector(`.additionRow[data-el="${el}"]`);
-    state[el] = {
-      perTonne: row.querySelector('.addPerTonne').value,
-      perLaddle: row.querySelector('.addPerLaddle').value
-    };
-  });
-  localStorage.setItem('coreCountingAdditions', JSON.stringify(state));
-}
-
-additionsEdit.addEventListener('input', ()=>{
-  saveAdditionsState();
+additionsEdit.addEventListener('input', (e)=>{
+  const row = e.target.closest('.additionRow');
+  if(!row) return;
   renderAdditionsResults();
+  queueAdditionSave(row.dataset.el);
 });
 
 additionsToggleBtn.addEventListener('click', ()=>{
@@ -654,10 +677,12 @@ async function checkSession(){
     loadDipMemory();
     loadPublishedDay();
     startChatPolling();
+    startAdditionsPolling();
   } else {
     loginScreen.style.display = 'block';
     mainScreen.style.display = 'none';
     stopChatPolling();
+    stopAdditionsPolling();
   }
 }
 

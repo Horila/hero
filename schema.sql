@@ -94,6 +94,16 @@ create table if not exists chat_messages (
 
 create index if not exists chat_messages_job_date_idx on chat_messages (job_date, created_at);
 
+-- ---------- Additions bubble (Cr/Cu/Mo/Sn/Ni/Gr/Ti dosing) ----------
+-- Synced across Horatio's devices instead of per-browser localStorage.
+-- Authenticated-only, same trust level as dip_items.
+create table if not exists additions (
+  element text primary key check (element in ('Cr','Cu','Mo','Sn','Ni','Gr','Ti')),
+  per_tonne numeric,
+  per_laddle numeric,
+  updated_at timestamptz not null default now()
+);
+
 -- ---------- View: what the trolley boys are allowed to see ----------
 -- Only the fields they need + their own count inputs + the computed
 -- total. Views run with the OWNER's permissions, so this can read the
@@ -319,6 +329,18 @@ create policy "anon can send published-day chat"
   );
 
 grant select, insert on chat_messages to anon, authenticated;
+
+-- additions: your logged-in account only
+alter table additions enable row level security;
+revoke all on additions from anon, authenticated;
+
+drop policy if exists "authenticated full access to additions" on additions;
+create policy "authenticated full access to additions"
+  on additions for all
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
+
+grant select, insert, update, delete on additions to authenticated;
 
 -- Views: trolley_jobs is public (anon), job_summary is yours only
 grant select on trolley_jobs to anon;
