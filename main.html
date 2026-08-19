@@ -117,6 +117,7 @@
   .jrCount.jrOk{color:var(--green);font-weight:700;}
   .jrCount.jrShort{color:var(--red);font-weight:700;}
   .jrTon{font-weight:700;min-width:44px;text-align:right;}
+  .jrEta{color:var(--dim);min-width:40px;text-align:right;}
   .jrDip{display:flex;align-items:center;gap:3px;color:var(--dim);font-size:10px;}
   .jrDip input{width:auto;margin:0;accent-color:var(--amber);}
   .editToggleBtn{width:auto;padding:4px 10px;font-size:10.5px;margin-top:6px;background:transparent;border:1px solid var(--line);}
@@ -317,6 +318,16 @@
       <div class="tableScroll" style="margin-top:8px;"><table id="gradeTable"></table></div>
     </div>
 
+    <div class="card" style="padding:10px 12px;">
+      <h2 style="font-size:12px;margin:0;font-family:var(--mono);color:var(--dim);">JOB PACE / ETA</h2>
+      <label>CURRENT JOB</label>
+      <select id="paceJobSelect"></select>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><label>STARTED AT</label><input type="time" id="paceStartTime"></div>
+        <div><label>TONS/HOUR</label><input type="number" id="paceTonsPerHour" step="any"></div>
+      </div>
+    </div>
+
     <!-- Desktop-only: search + quick filters over today's jobs -->
     <div class="card desktopToolbar" id="desktopToolbar">
       <input type="text" id="jobSearch" placeholder="Search AM#, grade, customer, item#…">
@@ -491,6 +502,136 @@ additionsTitle.addEventListener('click', ()=>{
 
 renderAdditionsResults();
 
+// ---------- Job pace / ETA ----------
+// pace mirrors the single job_pace row for the day currently shown in jobDatePicker.
+// current_job_id/started_at/tons_per_hour are null until Horatio (or auto-advance) sets them —
+// effectiveCurrentJobId() supplies the "first not-done job" default without writing anything.
+let pace = { current_job_id: null, started_at: null, tons_per_hour: null };
+const paceJobSelect = document.getElementById('paceJobSelect');
+const paceStartTime = document.getElementById('paceStartTime');
+const paceTonsPerHour = document.getElementById('paceTonsPerHour');
+
+function effectiveCurrentJobId(){
+  if(pace.current_job_id && jobs.some(j => j.id === pace.current_job_id)) return pace.current_job_id;
+  const firstNotDone = jobs.find(j => !j.is_done);
+  return firstNotDone ? firstNotDone.id : null;
+}
+
+// Pure function of jobs (already sort_order-sorted) + pace state -> { jobId: startTimeMs }.
+// No ETA at all if tons/hour or start time is missing/non-finite (avoids Infinity/NaN).
+function computeEtas(){
+  const etas = {};
+  const tph = parseFloat(pace.tons_per_hour);
+  if(!pace.started_at || !Number.isFinite(tph) || tph <= 0) return etas;
+  const startMs = new Date(pace.started_at).getTime();
+  if(!Number.isFinite(startMs)) return etas;
+  const curId = effectiveCurrentJobId();
+  const idx = jobs.findIndex(j => j.id === curId);
+  if(idx < 0) return etas;
+  let t = startMs;
+  for(let i = idx; i < jobs.length; i++){
+    const j = jobs[i];
+    if(j.is_done) continue; // finished/irrelevant to the projection
+    etas[j.id] = t;
+    t += (j.tonnage || 0) / tph * 3600000;
+  }
+  return etas;
+}
+
+function fmtEta(ms){
+  return ms ? new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+}
+
+function renderPaceCard(force){
+  const curId = effectiveCurrentJobId();
+  paceJobSelect.innerHTML = jobs.map(j => `<option value="${j.id}">${esc(j.am_number)}${j.grade ? ' — ' + esc(j.grade) : ''}</option>`).join('');
+  if(force || document.activeElement !== paceJobSelect) paceJobSelect.value = curId || '';
+  if(force || document.activeElement !== paceStartTime) paceStartTime.value = pace.started_at ? new Date(pace.started_at).toTimeString().slice(0,5) : '';
+  if(document.activeElement !== paceTonsPerHour) paceTonsPerHour.value = pace.tons_per_hour ?? '';
+}
+
+// Combine the edited HH:MM with the currently-selected day into a full timestamp, same shape
+// as other day-scoped saves in this file. Local time as entered, not UTC.
+function composeStartedAt(){
+  if(!paceStartTime.value) return null;
+  const day = jobDatePicker.value || todayStr();
+  const d = new Date(`${day}T${paceStartTime.value}:00`);
+  return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+}
+
+async function loadPace(){
+  const day = jobDatePicker.value || todayStr();
+  const { data, error } = await supa.from('job_pace').select('*').eq('job_date', day).maybeSingle();
+  if(error) return;
+  pace = data
+    ? { current_job_id: data.current_job_id, started_at: data.started_at, tons_per_hour: data.tons_per_hour }
+    : { current_job_id: null, started_at: null, tons_per_hour: null };
+  renderPaceCard();
+  renderJobs();
+}
+
+let paceSaveTimer = null;
+function queuePaceSave(){
+  clearTimeout(paceSaveTimer);
+  paceSaveTimer = setTimeout(performPaceSave, 500);
+}
+
+async function performPaceSave(){
+  const day = jobDatePicker.value || todayStr();
+  const tph = parseFloat(paceTonsPerHour.value);
+  pace = {
+    current_job_id: paceJobSelect.value || null,
+    started_at: composeStartedAt(),
+    tons_per_hour: Number.isFinite(tph) ? tph : null
+  };
+  await supa.from('job_pace').upsert({
+    job_date: day,
+    current_job_id: pace.current_job_id,
+    started_at: pace.started_at,
+    tons_per_hour: pace.tons_per_hour,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'job_date' });
+  renderJobs();
+}
+
+paceJobSelect.addEventListener('change', queuePaceSave);
+paceStartTime.addEventListener('input', queuePaceSave);
+paceTonsPerHour.addEventListener('input', queuePaceSave);
+
+// Ticking "done" on whichever job is currently the pace's current job auto-advances to the
+// next not-done job after it, starting it now, carrying tons/hour forward unchanged. This is
+// a direct user action (not a background poll), so the pace card inputs are force-refreshed
+// regardless of focus.
+async function advancePace(justDoneId){
+  const idx = jobs.findIndex(j => j.id === justDoneId);
+  const next = jobs.slice(idx + 1).find(j => !j.is_done);
+  const day = jobDatePicker.value || todayStr();
+  pace = {
+    current_job_id: next ? next.id : null,
+    started_at: next ? new Date().toISOString() : pace.started_at,
+    tons_per_hour: pace.tons_per_hour
+  };
+  await supa.from('job_pace').upsert({
+    job_date: day,
+    current_job_id: pace.current_job_id,
+    started_at: pace.started_at,
+    tons_per_hour: pace.tons_per_hour,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'job_date' });
+  renderPaceCard(true);
+  renderJobs();
+}
+
+let pacePollTimer = null;
+function startPacePolling(){
+  loadPace();
+  clearInterval(pacePollTimer);
+  pacePollTimer = setInterval(loadPace, 15000);
+}
+function stopPacePolling(){
+  clearInterval(pacePollTimer);
+}
+
 // ---------- Chat ----------
 const chatToggleBtn = document.getElementById('chatToggleBtn');
 const chatDot = document.getElementById('chatDot');
@@ -640,8 +781,8 @@ const dipMemoryList = document.getElementById('dipMemoryList');
 const dipMemoryEmpty = document.getElementById('dipMemoryEmpty');
 
 jobDatePicker.value = todayStr();
-jobDatePicker.addEventListener('change', ()=>{ loadJobs(); updatePushLiveButton(); loadChat(); });
-refreshBtn.addEventListener('click', ()=>{ loadJobs(); loadDipMemory(); loadPublishedDay(); });
+jobDatePicker.addEventListener('change', ()=>{ loadJobs(); updatePushLiveButton(); loadChat(); loadPace(); });
+refreshBtn.addEventListener('click', ()=>{ loadJobs(); loadDipMemory(); loadPublishedDay(); loadPace(); });
 
 let publishedDay = null;
 
@@ -685,11 +826,13 @@ async function checkSession(){
     loadPublishedDay();
     startChatPolling();
     startAdditionsPolling();
+    startPacePolling();
   } else {
     loginScreen.style.display = 'block';
     mainScreen.style.display = 'none';
     stopChatPolling();
     stopAdditionsPolling();
+    stopPacePolling();
   }
 }
 
@@ -1064,6 +1207,7 @@ function renderDesktopSidebar(shortJobs, dippingJobs, makingJobs){
 }
 
 function renderJobs(){
+  renderPaceCard();
   if(!jobs.length){
     jobList.innerHTML = '';
     jobsEmpty.style.display = 'block';
@@ -1075,6 +1219,7 @@ function renderJobs(){
 }
 
 function renderJobsMobile(){
+  const etas = computeEtas();
   jobList.innerHTML = jobs.map(j=>{
     const planned = j.planned_qty ?? null;
     const counted = j.counted_total ?? 0;
@@ -1092,6 +1237,7 @@ function renderJobsMobile(){
           <div class="jrStats">
             <span class="jrCount ${short ? 'jrShort' : 'jrOk'}">${counted}/${planned ?? '—'}</span>
             <span class="jrTon">${(j.tonnage||0).toFixed(2)}t</span>
+            <span class="jrEta">${fmtEta(etas[j.id])}</span>
             <label class="jrDip"><input type="checkbox" class="dippingCheckbox" data-id="${j.id}" ${j.needs_dipping ? 'checked':''}> dip</label>
             <label class="jrDip"><input type="checkbox" data-id="${j.id}" data-f="is_done" ${j.is_done ? 'checked':''}> done</label>
           </div>
@@ -1134,6 +1280,7 @@ function matchesDesktopFilter(j){
 // expand drawer — except the Dip checkbox, which stays a one-click inline toggle to match the
 // same always-on checkbox mobile already uses on its collapsed cards.
 function renderJobsDesktop(){
+  const etas = computeEtas();
   const visible = jobs.filter(matchesDesktopFilter);
   const rowsHtml = visible.map(j=>{
     const planned = j.planned_qty ?? null;
@@ -1157,6 +1304,7 @@ function renderJobsDesktop(){
         </td>
         <td class="roText" style="text-align:center;">${j.is_doubles ? '✓' : '—'}</td>
         <td class="jrTon">${(j.tonnage||0).toFixed(2)}t</td>
+        <td class="jrEta roText">${fmtEta(etas[j.id])}</td>
         <td style="text-align:center;"><input type="checkbox" class="dippingCheckbox" data-id="${j.id}" ${j.needs_dipping ? 'checked' : ''}></td>
         <td style="text-align:center;"><input type="checkbox" data-id="${j.id}" data-f="is_done" ${j.is_done ? 'checked' : ''}></td>
         <td class="commentCell" title="${esc(j.comment)}">${j.comment ? esc(j.comment) : ''}</td>
@@ -1164,7 +1312,7 @@ function renderJobsDesktop(){
       </tr>
       ${editing ? `
       <tr class="editDrawerRow" data-id="${j.id}">
-        <td colspan="15"><div class="editPanel">
+        <td colspan="16"><div class="editPanel">
           ${fieldsHtml(j, 'data-id', j.id, { wide: true, trialIdPrefix: 'dTrial', doublesIdPrefix: 'dDoubles' })}
           ${j.comment ? `<div class="jrComment">"${esc(j.comment)}"</div>` : ''}
           <div class="manageSaveState" data-savestate="${j.id}"></div>
@@ -1176,7 +1324,7 @@ function renderJobsDesktop(){
   jobList.innerHTML = `<div class="tableScroll"><table class="desktopTable">
     <thead><tr>
       <th></th><th class="amCell">AM #</th><th>Grade</th><th>Item #</th><th>Status</th><th>Flags</th>
-      <th>Wt/kg</th><th>Planned</th><th>Counted</th><th>Dbl</th><th>Tonnage</th><th>Dip</th><th>Done</th><th>Comment</th><th></th>
+      <th>Wt/kg</th><th>Planned</th><th>Counted</th><th>Dbl</th><th>Tonnage</th><th>ETA</th><th>Dip</th><th>Done</th><th>Comment</th><th></th>
     </tr></thead>
     <tbody>${rowsHtml}</tbody>
   </table></div>`;
@@ -1196,7 +1344,12 @@ jobList.addEventListener('change', (e)=>{
   const cb = e.target.closest('input[type="checkbox"][data-f]');
   if(cb){
     const job = jobs.find(j => j.id === cb.dataset.id);
-    if(job){ job[cb.dataset.f] = cb.checked; queueSave(cb.dataset.id, cb.dataset.f, cb.checked); }
+    if(job){
+      const wasCurrentPaceJob = cb.dataset.f === 'is_done' && cb.checked && job.id === effectiveCurrentJobId();
+      job[cb.dataset.f] = cb.checked;
+      queueSave(cb.dataset.id, cb.dataset.f, cb.checked);
+      if(wasCurrentPaceJob) advancePace(job.id);
+    }
     return;
   }
   const dip = e.target.closest('.dippingCheckbox');

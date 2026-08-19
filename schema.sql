@@ -104,6 +104,18 @@ create table if not exists additions (
   updated_at timestamptz not null default now()
 );
 
+-- ---------- Job pace / ETA tracking ----------
+-- One row per job_date: which job is currently being cast, when it
+-- started, and the current tons/hour speed. main.html projects a
+-- rough start time for every job below it in the list from this.
+create table if not exists job_pace (
+  job_date date primary key,
+  current_job_id uuid references jobs(id) on delete set null,
+  started_at timestamptz,
+  tons_per_hour numeric,
+  updated_at timestamptz not null default now()
+);
+
 -- ---------- View: what the trolley boys are allowed to see ----------
 -- Only the fields they need + their own count inputs + the computed
 -- total. Views run with the OWNER's permissions, so this can read the
@@ -341,6 +353,18 @@ create policy "authenticated full access to additions"
   with check (auth.role() = 'authenticated');
 
 grant select, insert, update, delete on additions to authenticated;
+
+-- job_pace: your logged-in account only
+alter table job_pace enable row level security;
+revoke all on job_pace from anon, authenticated;
+
+drop policy if exists "authenticated full access to job_pace" on job_pace;
+create policy "authenticated full access to job_pace"
+  on job_pace for all
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
+
+grant select, insert, update, delete on job_pace to authenticated;
 
 -- Views: trolley_jobs is public (anon), job_summary is yours only
 grant select on trolley_jobs to anon;
