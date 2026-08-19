@@ -112,10 +112,11 @@
   .topCardsRow .card{margin-bottom:0;width:fit-content;max-width:100%;}
   .topCardsRow .eqCard{width:280px;max-width:100%;}
   #paceJobSelect{width:240px;max-width:100%;}
-  .paceRow2{display:flex;gap:8px;}
-  .paceRow2 > div{width:116px;}
-  .paceRow2 input{width:100%;}
+  #paceTonsPerHour{width:240px;max-width:100%;}
   #paceRemainingQty{width:240px;max-width:100%;}
+  .paceCalcRow{display:flex;align-items:center;gap:8px;margin-top:10px;}
+  #paceCalcBtn{width:auto;padding:8px 12px;font-size:12px;}
+  #paceCalcStamp{font-family:var(--mono);font-size:10px;color:var(--dim);}
 
   .badge{display:inline-block;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.03em;padding:2px 6px;border-radius:5px;white-space:nowrap;}
   .badge-warn{background:var(--red-bg);color:var(--red);}
@@ -302,12 +303,14 @@
         <h2 style="font-size:12px;margin:0;font-family:var(--mono);color:var(--dim);">JOB PACE / ETA</h2>
         <label>CURRENT JOB</label>
         <select id="paceJobSelect"></select>
-        <div class="paceRow2">
-          <div><label>STARTED AT</label><input type="time" id="paceStartTime"></div>
-          <div><label>TONS/HOUR</label><input type="number" id="paceTonsPerHour" step="any"></div>
-        </div>
+        <label>TONS/HOUR</label>
+        <input type="number" id="paceTonsPerHour" step="any">
         <label>CORES LEFT ON THIS JOB (optional — corrects for downtime)</label>
         <input type="number" id="paceRemainingQty" step="1" placeholder="leave blank = full job">
+        <div class="paceCalcRow">
+          <button id="paceCalcBtn" type="button">⏱ Calculate from now</button>
+          <span id="paceCalcStamp"></span>
+        </div>
       </div>
 
       <div id="additionsBox" class="eqCard">
@@ -515,9 +518,10 @@ renderAdditionsResults();
 // effectiveCurrentJobId() supplies the "first not-done job" default without writing anything.
 let pace = { current_job_id: null, started_at: null, tons_per_hour: null, remaining_qty: null };
 const paceJobSelect = document.getElementById('paceJobSelect');
-const paceStartTime = document.getElementById('paceStartTime');
 const paceTonsPerHour = document.getElementById('paceTonsPerHour');
 const paceRemainingQty = document.getElementById('paceRemainingQty');
+const paceCalcBtn = document.getElementById('paceCalcBtn');
+const paceCalcStamp = document.getElementById('paceCalcStamp');
 
 function effectiveCurrentJobId(){
   if(pace.current_job_id && jobs.some(j => j.id === pace.current_job_id)) return pace.current_job_id;
@@ -578,27 +582,12 @@ function renderPaceCard(force){
   const curJob = jobs.find(j => j.id === curId);
   paceJobSelect.innerHTML = jobs.map(j => `<option value="${j.id}">${esc(j.am_number)}${j.grade ? ' — ' + esc(j.grade) : ''}</option>`).join('');
   if(force || document.activeElement !== paceJobSelect) paceJobSelect.value = curId || '';
-  if(force || document.activeElement !== paceStartTime) paceStartTime.value = pace.started_at ? new Date(pace.started_at).toTimeString().slice(0,5) : '';
   if(document.activeElement !== paceTonsPerHour) paceTonsPerHour.value = pace.tons_per_hour ?? '';
   if(force || document.activeElement !== paceRemainingQty) paceRemainingQty.value = pace.remaining_qty ?? '';
   paceRemainingQty.placeholder = curJob && curJob.planned_qty ? `leave blank = full job (${curJob.planned_qty})` : 'leave blank = full job';
-}
-
-// Combine the edited HH:MM with the currently-selected day into a full timestamp, same shape
-// as other day-scoped saves in this file. Local time as entered, not UTC.
-//
-// Built from numeric Date() args, not a "YYYY-MM-DDTHH:mm:ss" string — a no-timezone
-// date-time STRING is spec'd to parse as local time, but that's inconsistently
-// implemented across engines (Safari/WebKit has a long history of treating it as UTC
-// instead). Numeric args are unambiguous local time on every browser, which matters here
-// since pace is synced across devices that may not share a JS engine.
-function composeStartedAt(){
-  if(!paceStartTime.value) return null;
-  const day = jobDatePicker.value || todayStr();
-  const [y, mo, d] = day.split('-').map(Number);
-  const [h, mi] = paceStartTime.value.split(':').map(Number);
-  const dt = new Date(y, mo - 1, d, h, mi, 0);
-  return Number.isFinite(dt.getTime()) ? dt.toISOString() : null;
+  paceCalcStamp.textContent = pace.started_at
+    ? 'Last calculated ' + new Date(pace.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + (pace.remaining_qty != null ? ` (${pace.remaining_qty} cores left)` : '')
+    : 'Not calculated yet';
 }
 
 async function loadPace(){
@@ -618,13 +607,16 @@ function queuePaceSave(){
   paceSaveTimer = setTimeout(performPaceSave, 500);
 }
 
+// Saves job/tons-per-hour/cores-left as they're edited (so they sync across devices right
+// away), but never touches started_at itself — the displayed ETAs stay anchored to whenever
+// the calculate button (or auto-advance) last set it, not to every keystroke here.
 async function performPaceSave(){
   const day = jobDatePicker.value || todayStr();
   const tph = parseFloat(paceTonsPerHour.value);
   const remaining = parseFloat(paceRemainingQty.value);
   pace = {
     current_job_id: paceJobSelect.value || null,
-    started_at: composeStartedAt(),
+    started_at: pace.started_at,
     tons_per_hour: Number.isFinite(tph) ? tph : null,
     remaining_qty: Number.isFinite(remaining) ? remaining : null
   };
@@ -639,18 +631,20 @@ async function performPaceSave(){
   renderJobs();
 }
 
-// Switching the current job invalidates any remaining-mould correction typed for the old one.
+// Switching the current job invalidates any remaining-core correction typed for the old one.
 paceJobSelect.addEventListener('change', ()=>{
   paceRemainingQty.value = '';
   queuePaceSave();
 });
-paceStartTime.addEventListener('input', queuePaceSave);
 paceTonsPerHour.addEventListener('input', queuePaceSave);
-// Correcting the remaining count is a "from right now" checkpoint — bump the start time to
-// match so the ETA chain re-anchors from this moment instead of the original start time.
-paceRemainingQty.addEventListener('input', ()=>{
-  paceStartTime.value = new Date().toTimeString().slice(0,5);
-  queuePaceSave();
+paceRemainingQty.addEventListener('input', queuePaceSave);
+
+// The only thing that moves the ETA anchor: built from new Date() directly (no string
+// parsing), so there's no timezone ambiguity across devices with different JS engines.
+paceCalcBtn.addEventListener('click', ()=>{
+  clearTimeout(paceSaveTimer);
+  pace.started_at = new Date().toISOString();
+  performPaceSave();
 });
 
 // Ticking "done" on whichever job is currently the pace's current job auto-advances to the
