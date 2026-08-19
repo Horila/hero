@@ -223,9 +223,8 @@
   .chip.active{background:var(--amber-bg);border-color:var(--amber-dim);color:var(--amber);}
 
   .mainSplit{display:block;}
-  body.desktop-view .mainSplit{display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start;}
-  .sidebarCol{display:none;}
-  body.desktop-view .sidebarCol{display:block;position:sticky;top:70px;}
+  .sidebarCol{display:none;min-width:220px;}
+  body.desktop-view .sidebarCol{display:block;}
   .alertPanel h3{font-size:10.5px;margin:0 0 8px 0;font-family:var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:.03em;}
   .alertRow{display:flex;justify-content:space-between;gap:8px;padding:5px 0;font-family:var(--mono);font-size:11.5px;border-bottom:1px solid var(--line);cursor:pointer;}
   .alertRow:last-child{border-bottom:none;}
@@ -346,6 +345,8 @@
         <label>MOULDS LEFT ON THIS JOB (optional — corrects for downtime)</label>
         <input type="number" id="paceRemainingQty" step="1" placeholder="leave blank = full job">
       </div>
+
+      <div class="card sidebarCol" id="desktopSidebar"></div>
     </div>
 
     <!-- Desktop-only: search + quick filters over today's jobs -->
@@ -366,7 +367,6 @@
         <div id="jobList"></div>
         <div id="jobsEmpty" style="display:none;">No jobs for this day.</div>
       </div>
-      <div class="card sidebarCol" id="desktopSidebar"></div>
     </div>
 
     <!-- Scan / upload / manual add — bottom of page, under all jobs -->
