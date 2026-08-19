@@ -328,6 +328,8 @@
         <div><label>STARTED AT</label><input type="time" id="paceStartTime"></div>
         <div><label>TONS/HOUR</label><input type="number" id="paceTonsPerHour" step="any"></div>
       </div>
+      <label>MOULDS LEFT ON THIS JOB (optional — corrects for downtime)</label>
+      <input type="number" id="paceRemainingQty" step="1" placeholder="leave blank = full job">
     </div>
 
     <!-- Desktop-only: search + quick filters over today's jobs -->
@@ -508,10 +510,11 @@ renderAdditionsResults();
 // pace mirrors the single job_pace row for the day currently shown in jobDatePicker.
 // current_job_id/started_at/tons_per_hour are null until Horatio (or auto-advance) sets them —
 // effectiveCurrentJobId() supplies the "first not-done job" default without writing anything.
-let pace = { current_job_id: null, started_at: null, tons_per_hour: null };
+let pace = { current_job_id: null, started_at: null, tons_per_hour: null, remaining_qty: null };
 const paceJobSelect = document.getElementById('paceJobSelect');
 const paceStartTime = document.getElementById('paceStartTime');
 const paceTonsPerHour = document.getElementById('paceTonsPerHour');
+const paceRemainingQty = document.getElementById('paceRemainingQty');
 
 function effectiveCurrentJobId(){
   if(pace.current_job_id && jobs.some(j => j.id === pace.current_job_id)) return pace.current_job_id;
@@ -535,7 +538,13 @@ function computeEtas(){
     const j = jobs[i];
     if(j.is_done) continue; // finished/irrelevant to the projection
     etas[j.id] = t;
-    t += (j.tonnage || 0) / tph * 3600000;
+    let ton = j.tonnage || 0;
+    // Current job only: if Horatio's corrected the remaining mould count (e.g. after
+    // downtime), scale its tonnage down proportionally instead of assuming the full job.
+    if(i === idx && pace.remaining_qty != null && j.planned_qty){
+      ton = ton * (pace.remaining_qty / j.planned_qty);
+    }
+    t += ton / tph * 3600000;
   }
   return etas;
 }
@@ -546,10 +555,13 @@ function fmtEta(ms){
 
 function renderPaceCard(force){
   const curId = effectiveCurrentJobId();
+  const curJob = jobs.find(j => j.id === curId);
   paceJobSelect.innerHTML = jobs.map(j => `<option value="${j.id}">${esc(j.am_number)}${j.grade ? ' — ' + esc(j.grade) : ''}</option>`).join('');
   if(force || document.activeElement !== paceJobSelect) paceJobSelect.value = curId || '';
   if(force || document.activeElement !== paceStartTime) paceStartTime.value = pace.started_at ? new Date(pace.started_at).toTimeString().slice(0,5) : '';
   if(document.activeElement !== paceTonsPerHour) paceTonsPerHour.value = pace.tons_per_hour ?? '';
+  if(force || document.activeElement !== paceRemainingQty) paceRemainingQty.value = pace.remaining_qty ?? '';
+  paceRemainingQty.placeholder = curJob && curJob.planned_qty ? `leave blank = full job (${curJob.planned_qty})` : 'leave blank = full job';
 }
 
 // Combine the edited HH:MM with the currently-selected day into a full timestamp, same shape
@@ -566,8 +578,8 @@ async function loadPace(){
   const { data, error } = await supa.from('job_pace').select('*').eq('job_date', day).maybeSingle();
   if(error) return;
   pace = data
-    ? { current_job_id: data.current_job_id, started_at: data.started_at, tons_per_hour: data.tons_per_hour }
-    : { current_job_id: null, started_at: null, tons_per_hour: null };
+    ? { current_job_id: data.current_job_id, started_at: data.started_at, tons_per_hour: data.tons_per_hour, remaining_qty: data.remaining_qty }
+    : { current_job_id: null, started_at: null, tons_per_hour: null, remaining_qty: null };
   renderPaceCard();
   renderJobs();
 }
@@ -581,24 +593,37 @@ function queuePaceSave(){
 async function performPaceSave(){
   const day = jobDatePicker.value || todayStr();
   const tph = parseFloat(paceTonsPerHour.value);
+  const remaining = parseFloat(paceRemainingQty.value);
   pace = {
     current_job_id: paceJobSelect.value || null,
     started_at: composeStartedAt(),
-    tons_per_hour: Number.isFinite(tph) ? tph : null
+    tons_per_hour: Number.isFinite(tph) ? tph : null,
+    remaining_qty: Number.isFinite(remaining) ? remaining : null
   };
   await supa.from('job_pace').upsert({
     job_date: day,
     current_job_id: pace.current_job_id,
     started_at: pace.started_at,
     tons_per_hour: pace.tons_per_hour,
+    remaining_qty: pace.remaining_qty,
     updated_at: new Date().toISOString()
   }, { onConflict: 'job_date' });
   renderJobs();
 }
 
-paceJobSelect.addEventListener('change', queuePaceSave);
+// Switching the current job invalidates any remaining-mould correction typed for the old one.
+paceJobSelect.addEventListener('change', ()=>{
+  paceRemainingQty.value = '';
+  queuePaceSave();
+});
 paceStartTime.addEventListener('input', queuePaceSave);
 paceTonsPerHour.addEventListener('input', queuePaceSave);
+// Correcting the remaining count is a "from right now" checkpoint — bump the start time to
+// match so the ETA chain re-anchors from this moment instead of the original start time.
+paceRemainingQty.addEventListener('input', ()=>{
+  paceStartTime.value = new Date().toTimeString().slice(0,5);
+  queuePaceSave();
+});
 
 // Ticking "done" on whichever job is currently the pace's current job auto-advances to the
 // next not-done job after it, starting it now, carrying tons/hour forward unchanged. This is
@@ -611,13 +636,15 @@ async function advancePace(justDoneId){
   pace = {
     current_job_id: next ? next.id : null,
     started_at: next ? new Date().toISOString() : pace.started_at,
-    tons_per_hour: pace.tons_per_hour
+    tons_per_hour: pace.tons_per_hour,
+    remaining_qty: null // fresh job — a leftover correction from the last one no longer applies
   };
   await supa.from('job_pace').upsert({
     job_date: day,
     current_job_id: pace.current_job_id,
     started_at: pace.started_at,
     tons_per_hour: pace.tons_per_hour,
+    remaining_qty: pace.remaining_qty,
     updated_at: new Date().toISOString()
   }, { onConflict: 'job_date' });
   renderPaceCard(true);

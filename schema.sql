@@ -113,6 +113,7 @@ create table if not exists job_pace (
   current_job_id uuid references jobs(id) on delete set null,
   started_at timestamptz,
   tons_per_hour numeric,
+  remaining_qty numeric,
   updated_at timestamptz not null default now()
 );
 
