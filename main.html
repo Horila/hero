@@ -154,7 +154,8 @@
     box-shadow:var(--shadow);
   }
   #additionsBox .additionsHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
-  #additionsBox .additionsTitle{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.03em;}
+  #additionsBox .additionsTitle{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.03em;cursor:pointer;}
+  #additionsBox.collapsed #additionsEdit,#additionsBox.collapsed #additionsResults{display:none;}
   #additionsToggleBtn{width:auto;padding:2px 8px;font-size:12px;background:transparent;border:none;color:var(--dim);}
   .additionRow{display:grid;grid-template-columns:22px 70px 70px;gap:4px;align-items:center;margin-top:4px;}
   .additionRow label{margin:0;font-size:11px;color:var(--text);text-transform:none;font-family:var(--sans);}
@@ -401,6 +402,8 @@ viewToggle.addEventListener('click', ()=>{
 
 // ---------- Additions ----------
 const ADDITION_ELEMENTS = ['Cr','Cu','Mo','Sn','Ni','Gr','Ti'];
+const additionsBox = document.getElementById('additionsBox');
+const additionsTitle = additionsBox.querySelector('.additionsTitle');
 const additionsToggleBtn = document.getElementById('additionsToggleBtn');
 const additionsEdit = document.getElementById('additionsEdit');
 const additionsResults = document.getElementById('additionsResults');
@@ -480,6 +483,10 @@ additionsToggleBtn.addEventListener('click', ()=>{
   additionsEdit.style.display = editing ? 'none' : 'block';
   additionsResults.style.display = editing ? 'block' : 'none';
   additionsToggleBtn.textContent = editing ? '✎' : '✓';
+});
+
+additionsTitle.addEventListener('click', ()=>{
+  additionsBox.classList.toggle('collapsed');
 });
 
 renderAdditionsResults();
