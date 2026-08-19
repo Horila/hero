@@ -10,14 +10,14 @@
 <script src="config.js"></script>
 <style>
   :root{
-    --bg:#0a0908; --bg-elev:#0f0d0a; --panel:#16130f; --panel2:#1c1811; --line:#2a231a; --line2:#3a3122;
-    --text:#e8e0d4; --dim:#8a8072; --dim2:#5f574a;
-    --amber:#ff8a1e; --amber2:#d9700f; --amber-dim:#7a4a1a; --amber-bg:rgba(255,138,30,.12);
+    --bg:#060b16; --bg-elev:#0a1424; --panel:#0d1a2e; --panel2:#142842; --line:#1e3a5c; --line2:#2c5480;
+    --text:#e8f0fb; --dim:#7d93b3; --dim2:#566a8c;
+    --amber:#4da6ff; --amber2:#2b7fd9; --amber-dim:#1f4f7a; --amber-bg:rgba(77,166,255,.16);
     --red:#e05540; --red-bg:rgba(224,85,64,.14);
     --green:#5fb87a; --green-bg:rgba(95,184,122,.14);
     --mono:'SF Mono','Courier New',ui-monospace,monospace; --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     --radius:14px; --radius-sm:9px;
-    --shadow:0 2px 10px rgba(0,0,0,.35), 0 1px 2px rgba(0,0,0,.3);
+    --shadow:0 2px 10px rgba(0,0,0,.5), 0 1px 2px rgba(0,0,0,.4);
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100%;}
@@ -28,6 +28,14 @@
   .subtitle{font-size:12px;color:var(--dim);margin-bottom:14px;font-family:var(--mono);}
 
   .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:14px;box-shadow:var(--shadow);}
+  .cardHeader{margin:0 0 10px 0;font-family:var(--mono);font-size:12px;color:var(--dim);}
+  /* Dark mode only (per theme-swap decision, light mode keeps its old plain header look) —
+     solid gradient bar with white text, matching the industrial-panel reference photo. */
+  body:not(.light) .cardHeader{
+    background:linear-gradient(135deg, var(--amber2), var(--amber));
+    color:#fff;padding:6px 10px;border-radius:6px;
+    text-transform:uppercase;letter-spacing:.05em;font-weight:700;font-size:11px;
+  }
 
   input, select{
     width:100%;padding:11px;border-radius:var(--radius-sm);border:1px solid var(--line);
@@ -47,7 +55,7 @@
   /* ---- Top bar ---- */
   .topBar{
     position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;
-    padding:10px 16px;background:rgba(10,9,8,.85);backdrop-filter:blur(10px);
+    padding:10px 16px;background:rgba(6,11,22,.85);backdrop-filter:blur(10px);
     border-bottom:1px solid var(--line);
   }
   body.light .topBar{background:rgba(245,241,232,.85);}
@@ -161,7 +169,10 @@
   body.light{
     --bg:#f5f1e8; --bg-elev:#ffffff; --panel:#ffffff; --panel2:#f3ede0; --line:#ddd4c0; --line2:#c9bea3;
     --text:#1a1610; --dim:#6b6152; --dim2:#948a76;
-    --amber-dim:#f0c896; --amber-bg:rgba(217,112,15,.10);
+    /* amber/amber2 aren't overridden elsewhere (theme-invariant by default) — pinned here
+       explicitly so light mode keeps its current orange when :root's dark-mode values
+       switch to blue below. */
+    --amber:#ff8a1e; --amber2:#d9700f; --amber-dim:#f0c896; --amber-bg:rgba(217,112,15,.10);
     --red-bg:rgba(192,57,43,.10); --green-bg:rgba(47,143,82,.12);
   }
 
@@ -295,12 +306,12 @@
 
     <div class="topCardsRow">
       <div class="card" style="padding:10px 12px;">
-        <h2 style="font-size:12px;margin:0;font-family:var(--mono);color:var(--dim);">TONNAGE BY GRADE</h2>
+        <h2 class="cardHeader">TONNAGE BY GRADE</h2>
         <div class="tableScroll" style="margin-top:8px;"><table id="gradeTable"></table></div>
       </div>
 
       <div class="card eqCard" style="padding:10px 12px;">
-        <h2 style="font-size:12px;margin:0;font-family:var(--mono);color:var(--dim);">JOB PACE / ETA</h2>
+        <h2 class="cardHeader">JOB PACE / ETA</h2>
         <label>CURRENT JOB</label>
         <select id="paceJobSelect"></select>
         <label>TONS/HOUR</label>
@@ -361,7 +372,7 @@
 
     <!-- Scan / upload / manual add — bottom of page, under all jobs -->
     <div class="card" style="margin-top:18px;">
-      <h2 style="font-size:12px;margin:0 0 8px 0;font-family:var(--mono);color:var(--dim);">ADD / SCAN NEW JOB</h2>
+      <h2 class="cardHeader">ADD / SCAN NEW JOB</h2>
       <input type="file" id="fileInput" accept="image/*" capture="environment">
       <input type="file" id="fileInputUpload" accept="image/*">
       <div class="scanBtnRow">
