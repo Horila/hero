@@ -433,6 +433,7 @@
           <div class="additionRow" data-el="Ni"><label>Ni</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
           <div class="additionRow" data-el="Gr"><label>Gr</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
           <div class="additionRow" data-el="Ti"><label>Ti</label><input type="number" class="addPerTonne" placeholder="per tonne"><input type="number" class="addPerLaddle" placeholder="per laddle"></div>
+          <button id="additionsClearBtn" type="button" style="width:auto;margin-top:8px;padding:6px 12px;font-size:12px;">Clear</button>
         </div>
         <div id="additionsResults">
           <table>
@@ -555,6 +556,7 @@ const additionsEdit = document.getElementById('additionsEdit');
 const additionsResults = document.getElementById('additionsResults');
 const additionsResultsBody = document.getElementById('additionsResultsBody');
 const additionsEmpty = document.getElementById('additionsEmpty');
+const additionsClearBtn = document.getElementById('additionsClearBtn');
 
 const additionSaveTimers = {};
 
@@ -622,6 +624,16 @@ additionsEdit.addEventListener('input', (e)=>{
   if(!row) return;
   renderAdditionsResults();
   queueAdditionSave(row.dataset.el);
+});
+
+additionsClearBtn.addEventListener('click', async ()=>{
+  ADDITION_ELEMENTS.forEach(el => {
+    const row = additionsEdit.querySelector(`.additionRow[data-el="${el}"]`);
+    row.querySelector('.addPerTonne').value = '';
+    row.querySelector('.addPerLaddle').value = '';
+  });
+  renderAdditionsResults();
+  await Promise.all(ADDITION_ELEMENTS.map(el => performAdditionSave(el)));
 });
 
 additionsToggleBtn.addEventListener('click', ()=>{
