@@ -1654,7 +1654,21 @@ function tonnageUntilGradeChange(sortedJobs){
 }
 
 function updateStatsBar(){
-  const totalTonnage = jobs.filter(r => r.is_done).reduce((sum, r) => sum + (r.tonnage || 0), 0);
+  // Trolley counts only land when a full trolley gets logged, so the current job's
+  // r.tonnage (counted-cores-based) can lag behind reality. "Cores left on this job"
+  // (pace.remaining_qty) is Horatio's more immediate correction — derive used tonnage
+  // from planned_qty - remaining_qty too, and take whichever is higher so the tile
+  // never reports less than what's actually been counted.
+  const curId = effectiveCurrentJobId();
+  const totalTonnage = jobs.reduce((sum, r) => {
+    if(r.id === curId && pace.remaining_qty != null && r.planned_qty){
+      const usedQty = Math.max(0, r.planned_qty - pace.remaining_qty);
+      const effQty = r.is_doubles ? usedQty / 2 : usedQty;
+      const paceTonnage = effQty * (r.weight_kg || 0) / 1000;
+      return sum + Math.max(r.tonnage || 0, paceTonnage);
+    }
+    return sum + (r.tonnage || 0);
+  }, 0);
   const tonnageLeft = tonnageUntilGradeChange(jobs);
   summaryStats.innerHTML = `
     <div class="statTile neutral"><div class="num">${jobs.length}</div><div class="lbl">Jobs today</div></div>
