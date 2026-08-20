@@ -1538,7 +1538,7 @@ saveAllBtn.addEventListener('click', async ()=>{
   if(existingError){ setStatus('Save failed: ' + existingError.message, 'err'); saveAllBtn.disabled = false; return; }
   const existingByKey = Object.fromEntries((existingForDate || []).map(j => [`${j.am_number}|${j.item_number || ''}`, j]));
   const forcedNewRows = new Set(discrepancies.filter(d => d.resolution === 'newEntry').map(d => d.row));
-  let nextNewSortOrder = Date.now() / 1000;
+  let nextNewSortOrder = Date.now();
   dedupedRows.forEach(r => {
     const existing = forcedNewRows.has(r) ? null : existingByKey[`${r.am_number}|${r.item_number || ''}`];
     if(existing){ r.id = existing.id; r.sort_order = existing.sort_order; }
