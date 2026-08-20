@@ -1510,7 +1510,10 @@ saveAllBtn.addEventListener('click', async ()=>{
     const diffs = [];
     if(weightDiffers(row.weight_kg, baseline.weight_kg)) diffs.push({ field: 'weight_kg', label: 'Weight (kg)', stored: baseline.weight_kg ?? '—', value: row.weight_kg ?? '—' });
     if(!!row.is_doubles !== !!baseline.is_doubles) diffs.push({ field: 'is_doubles', label: 'Doubles/Singles', stored: baseline.is_doubles ? 'Doubles' : 'Singles', value: row.is_doubles ? 'Doubles' : 'Singles' });
-    if(!!row.needs_dipping !== !!baseline.needs_dipping) diffs.push({ field: 'needs_dipping', label: 'Dipping', stored: baseline.needs_dipping ? 'Yes' : 'No', value: row.needs_dipping ? 'Yes' : 'No' });
+    // needs_dipping is deliberately not crosschecked here — the scanned plan never
+    // lists it, so row.needs_dipping is always whatever dip_items memory guessed
+    // (see dipMemory above), and comparing that guess against item_reference's
+    // baseline would flag a "mismatch" on every scan for no reason.
     if(diffs.length) discrepancies.push({ row, baseline, isExactMatch, diffs, am_number: row.am_number, item_number: row.item_number, grade: row.grade });
   });
 
