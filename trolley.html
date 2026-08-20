@@ -32,6 +32,8 @@
   .jrMain{display:flex;justify-content:space-between;align-items:center;gap:8px;}
   .jrTop{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;}
   .amNumber{font-family:var(--mono);font-size:15px;font-weight:700;color:var(--amber);}
+  .jobRow.rowCurrent{font-weight:700;}
+  .jobRow.rowCurrent .amNumber{font-size:18px;}
   .planned{font-family:var(--mono);font-size:10px;color:var(--dim);}
   .mhInline{font-family:var(--mono);font-size:10px;color:var(--dim);}
   .jrRight{display:flex;align-items:center;gap:8px;flex-shrink:0;}
@@ -312,10 +314,11 @@ function render(){
   emptyEl.style.display = 'none';
 
   const etas = computeEtas();
+  const curId = effectiveCurrentJobId();
   listEl.innerHTML = jobs.map(j => {
     const editing = editingIds.has(j.job_id);
     return `
-    <div class="jobRow" data-job="${j.job_id}">
+    <div class="jobRow ${j.job_id === curId ? 'rowCurrent' : ''}" data-job="${j.job_id}">
       <div class="jrMain">
         <div class="jrTop">
           <span class="amNumber">${esc(j.am_number)}</span>
