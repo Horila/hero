@@ -228,6 +228,47 @@ let jobNotes = {}; // job_id -> [{body, created_at}] — office notes visible to
 let editingIds = new Set();
 const saveTimers = {}; // debounce per job
 let currentDay = null;
+let pace = { current_job_id: null, started_at: null, tons_per_hour: null, remaining_qty: null };
+const JOB_CHANGEOVER_MS = 7 * 60 * 1000;
+
+function plannedTonnage(j){
+  const qty = j.is_doubles ? (j.planned_qty || 0) / 2 : (j.planned_qty || 0);
+  return qty * (j.weight_kg || 0) / 1000;
+}
+
+// trolley_jobs is already filtered to not-done jobs and sorted by sort_order,
+// so jobs[0] IS "first not-done job" — no is_done filtering needed here.
+function effectiveCurrentJobId(){
+  if(pace.current_job_id && jobs.some(j => j.job_id === pace.current_job_id)) return pace.current_job_id;
+  return jobs.length ? jobs[0].job_id : null;
+}
+
+// Same algorithm as main.html's computeEtas(), keyed by job_id.
+function computeEtas(){
+  const etas = {};
+  const tph = parseFloat(pace.tons_per_hour);
+  if(!pace.started_at || !Number.isFinite(tph) || tph <= 0) return etas;
+  const startMs = new Date(pace.started_at).getTime();
+  if(!Number.isFinite(startMs)) return etas;
+  const curId = effectiveCurrentJobId();
+  const idx = jobs.findIndex(j => j.job_id === curId);
+  if(idx < 0) return etas;
+  let t = startMs;
+  for(let i = idx; i < jobs.length; i++){
+    const j = jobs[i];
+    if(i !== idx) etas[j.job_id] = t; // skip the current job: startMs isn't a real ETA for it
+    let ton = plannedTonnage(j);
+    if(i === idx && pace.remaining_qty != null && j.planned_qty){
+      ton = ton * (pace.remaining_qty / j.planned_qty);
+    }
+    t += ton / tph * 3600000 + JOB_CHANGEOVER_MS;
+  }
+  return etas;
+}
+
+function fmtEta(ms){
+  return ms ? new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+}
 
 async function loadJobs(){
   const { data: pub, error: pubError } = await supa.from('published_day').select('job_date').eq('id', 1).single();
@@ -240,6 +281,8 @@ async function loadJobs(){
   }
   const day = pub ? pub.job_date : new Date().toISOString().slice(0,10); // falls back to real today if not migrated yet
   currentDay = day;
+  const { data: paceData } = await supa.from('job_pace').select('*').eq('job_date', day).maybeSingle();
+  pace = paceData ? { current_job_id: paceData.current_job_id, started_at: paceData.started_at, tons_per_hour: paceData.tons_per_hour, remaining_qty: paceData.remaining_qty } : { current_job_id: null, started_at: null, tons_per_hour: null, remaining_qty: null };
   const { data, error } = await supa.from('trolley_jobs').select('*').eq('job_date', day).order('sort_order', { ascending: true });
   if(error){
     listEl.innerHTML = '<div style="color:var(--red);font-family:var(--mono);font-size:12px;">Error loading jobs: '+esc(error.message)+'</div>';
@@ -268,6 +311,7 @@ function render(){
   }
   emptyEl.style.display = 'none';
 
+  const etas = computeEtas();
   listEl.innerHTML = jobs.map(j => {
     const editing = editingIds.has(j.job_id);
     return `
@@ -276,6 +320,7 @@ function render(){
         <div class="jrTop">
           <span class="amNumber">${esc(j.am_number)}</span>
           <span class="planned">plan ${esc(j.planned_qty)}</span>
+          ${etas[j.job_id] ? `<span class="mhInline">ETA ${fmtEta(etas[j.job_id])}</span>` : ''}
           <span class="mhInline">Mingzhi ${esc(j.mingzhi_hansberg_no)}</span>
           ${j.needs_dipping ? '<span class="badge badge-warn">DIP</span>' : ''}
           ${j.still_making ? '<span class="badge badge-making">MAKING</span>' : ''}

@@ -677,7 +677,7 @@ function computeEtas(){
   for(let i = idx; i < jobs.length; i++){
     const j = jobs[i];
     if(j.is_done) continue; // finished/irrelevant to the projection
-    etas[j.id] = t;
+    if(i !== idx) etas[j.id] = t; // skip the current job: startMs isn't a real ETA for it
     let ton = plannedTonnage(j);
     // Current job only: if Horatio's corrected the remaining core count (e.g. after
     // downtime), scale its planned tonnage down proportionally instead of assuming the
@@ -1247,7 +1247,11 @@ function fieldsHtml(job, idAttr, idVal, opts){
 // here as everywhere else in this file (cf. editToggleBtn) — the write handlers below
 // already refuse the DB write, but rendering live-looking controls that silently no-op on
 // click is worse than not showing them at all.
-function notesSectionHtml(itemNumber){
+function addNoteButtonHtml(itemNumber){
+  return `<button class="noteAddBtn" data-item-number="${esc(itemNumber)}" type="button" style="width:auto;margin-top:6px;padding:6px 12px;font-size:12px;">+ Add note</button>`;
+}
+
+function notesSectionHtml(itemNumber, opts = {}){
   if(!itemNumber){
     return `<div class="notesSection" style="margin-top:10px;"><label>NOTES</label><div style="font-family:var(--mono);font-size:11px;color:var(--dim);">Add an item number to enable notes.</div></div>`;
   }
@@ -1266,12 +1270,12 @@ function notesSectionHtml(itemNumber){
       </div>`).join('') : `<div style="font-family:var(--mono);font-size:11px;color:var(--dim);">No notes yet.</div>`;
 
   return `
-    <div class="notesSection" data-item-number="${esc(itemNumber)}" style="margin-top:10px;">
+    <div class="notesSection" data-item-number="${esc(itemNumber)}" data-hide-add-btn="${opts.hideAddBtn ? '1' : ''}" style="margin-top:10px;">
       <label>NOTES</label>
       ${notesHtml}
       ${canEdit ? `
       <textarea class="noteNewBody" rows="2" placeholder="Add a note…" style="margin-top:8px;">${esc(noteDrafts[itemNumber] || '')}</textarea>
-      <button class="noteAddBtn" data-item-number="${esc(itemNumber)}" type="button" style="width:auto;margin-top:6px;padding:6px 12px;font-size:12px;">+ Add note</button>` : ''}
+      ${opts.hideAddBtn ? '' : addNoteButtonHtml(itemNumber)}` : ''}
     </div>`;
 }
 
@@ -1339,7 +1343,7 @@ async function refreshNotes(itemNumber){
   if(hadNotes !== hasNotes) renderJobs();
 
   document.querySelectorAll('.notesSection').forEach(el => {
-    if(el.dataset.itemNumber === itemNumber) el.outerHTML = notesSectionHtml(itemNumber);
+    if(el.dataset.itemNumber === itemNumber) el.outerHTML = notesSectionHtml(itemNumber, { hideAddBtn: el.dataset.hideAddBtn === '1' });
   });
 }
 
@@ -1586,71 +1590,13 @@ saveAllBtn.addEventListener('click', async ()=>{
     if(refFailures.length) console.error('item_reference sync had errors:', refFailures.map(r => r.error));
   }
 
-  const synced = await syncCountsFromPreviousDay(savedRows || []);
-  setStatus(dedupedRows.length + ' job(s) saved' + (synced ? ` — ${synced} count(s) carried over from a previous day` : '') + (refCheckFailed ? ' (crosscheck unavailable — see console)' : ''), 'ok');
+  setStatus(dedupedRows.length + ' job(s) saved' + (refCheckFailed ? ' (crosscheck unavailable — see console)' : ''), 'ok');
   extractedJobs = [];
   reviewList.innerHTML = '';
   saveAllBtn.style.display = 'none';
   saveAllBtn.disabled = false;
   loadJobs();
 });
-
-// If a saved job's am_number was already counted on an earlier job_date, carry that count
-// forward automatically — the boys shouldn't have to re-count a job that's just continuing
-// from the day before. Never touches a job that already has a counts row today (real trolley
-// input always wins over a carried-forward guess).
-async function syncCountsFromPreviousDay(savedRows){
-  const amNumbers = [...new Set(savedRows.map(r => r.am_number).filter(Boolean))];
-  if(!amNumbers.length) return 0;
-  const jobDate = savedRows[0].job_date;
-
-  const { data: todayCounts } = await supa.from('counts').select('job_id').in('job_id', savedRows.map(r => r.id));
-  const alreadyCounted = new Set((todayCounts || []).map(c => c.job_id));
-  const targets = savedRows.filter(r => !alreadyCounted.has(r.id));
-  if(!targets.length) return 0;
-
-  const { data: priorJobs } = await supa.from('jobs')
-    .select('id, am_number, item_number, job_date')
-    .in('am_number', targets.map(r => r.am_number))
-    .lt('job_date', jobDate)
-    .order('job_date', { ascending: false });
-  if(!priorJobs || !priorJobs.length) return 0;
-
-  // Keyed by am_number+item_number, not am_number alone — the same am_number
-  // can now legitimately cover more than one part on a given day (see
-  // item_reference / "save as new entry" in saveAllBtn above).
-  const mostRecentPriorIdByKey = {};
-  priorJobs.forEach(j => {
-    const key = `${j.am_number}|${j.item_number || ''}`;
-    if(!(key in mostRecentPriorIdByKey)) mostRecentPriorIdByKey[key] = j.id;
-  });
-
-  const priorIds = Object.values(mostRecentPriorIdByKey);
-  const { data: priorCounts } = await supa.from('counts')
-    .select('job_id, group_a_cores, group_a_trolleys, group_b_cores, group_b_trolleys, manual_total_override, comment, still_making')
-    .in('job_id', priorIds);
-  const priorCountByJobId = Object.fromEntries((priorCounts || []).map(c => [c.job_id, c]));
-
-  const newRows = targets.map(r => {
-    const priorId = mostRecentPriorIdByKey[`${r.am_number}|${r.item_number || ''}`];
-    const prior = priorId && priorCountByJobId[priorId];
-    if(!prior) return null;
-    return {
-      job_id: r.id,
-      group_a_cores: prior.group_a_cores,
-      group_a_trolleys: prior.group_a_trolleys,
-      group_b_cores: prior.group_b_cores,
-      group_b_trolleys: prior.group_b_trolleys,
-      manual_total_override: prior.manual_total_override,
-      comment: prior.comment,
-      still_making: prior.still_making
-    };
-  }).filter(Boolean);
-  if(!newRows.length) return 0;
-
-  const { error } = await supa.from('counts').insert(newRows);
-  return error ? 0 : newRows.length;
-}
 
 // ---------- Job list: merged Manage + Summary, compact rows ----------
 async function loadJobs(){
@@ -1775,8 +1721,9 @@ function renderJobsMobile(){
         ${editing ? `
         <div class="editPanel">
           ${fieldsHtml(j, 'data-id', j.id, { trialIdPrefix: 'editTrial', doublesIdPrefix: 'editDoubles' })}
-          ${notesSectionHtml(j.item_number)}
+          ${notesSectionHtml(j.item_number, { hideAddBtn: true })}
           ${j.comment ? `<div class="jrComment">"${esc(j.comment)}"</div>` : ''}
+          ${isFullAccess() && j.item_number ? addNoteButtonHtml(j.item_number) : ''}
           <div class="manageSaveState" data-savestate="${j.id}"></div>
           <button class="danger deleteJobBtn" data-id="${j.id}" style="margin-top:10px;">Delete job</button>
         </div>` : ''}
@@ -1844,8 +1791,9 @@ function renderJobsDesktop(){
       <tr class="editDrawerRow" data-id="${j.id}">
         <td colspan="16"><div class="editPanel">
           ${fieldsHtml(j, 'data-id', j.id, { wide: true, trialIdPrefix: 'dTrial', doublesIdPrefix: 'dDoubles' })}
-          ${notesSectionHtml(j.item_number)}
+          ${notesSectionHtml(j.item_number, { hideAddBtn: true })}
           ${j.comment ? `<div class="jrComment">"${esc(j.comment)}"</div>` : ''}
+          ${isFullAccess() && j.item_number ? addNoteButtonHtml(j.item_number) : ''}
           <div class="manageSaveState" data-savestate="${j.id}"></div>
           <button class="danger deleteJobBtn" data-id="${j.id}" style="margin-top:10px;width:auto;">Delete job</button>
         </div></td>
