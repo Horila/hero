@@ -1654,21 +1654,25 @@ function tonnageUntilGradeChange(sortedJobs){
 }
 
 function updateStatsBar(){
-  // Trolley counts only land when a full trolley gets logged, so the current job's
-  // r.tonnage (counted-cores-based) can lag behind reality. "Cores left on this job"
-  // (pace.remaining_qty) is Horatio's more immediate correction — derive used tonnage
-  // from planned_qty - remaining_qty too, and take whichever is higher so the tile
-  // never reports less than what's actually been counted.
+  // Only jobs actually cast so far count: finished jobs (is_done) in full, plus
+  // whatever's been poured on the current job. Jobs further down the list can carry
+  // counted_total already (boys count ahead, or it's stale/pre-filled) even though
+  // nothing's been cast yet — summing every row's counted tonnage overstates today's
+  // iron by whatever's sitting in those not-yet-started rows. The current job's
+  // "cores left" from the job pacer (planned_qty - remaining_qty) is the trustworthy
+  // figure for it; fall back to its counted tonnage if cores-left was never set.
   const curId = effectiveCurrentJobId();
-  const totalTonnage = jobs.reduce((sum, r) => {
-    if(r.id === curId && pace.remaining_qty != null && r.planned_qty){
-      const usedQty = Math.max(0, r.planned_qty - pace.remaining_qty);
-      const effQty = r.is_doubles ? usedQty / 2 : usedQty;
-      const paceTonnage = effQty * (r.weight_kg || 0) / 1000;
-      return sum + Math.max(r.tonnage || 0, paceTonnage);
+  const curJob = jobs.find(r => r.id === curId);
+  let totalTonnage = jobs.filter(r => r.is_done).reduce((sum, r) => sum + (r.tonnage || 0), 0);
+  if(curJob && !curJob.is_done){
+    let curTonnage = curJob.tonnage || 0;
+    if(pace.remaining_qty != null && curJob.planned_qty){
+      const usedQty = Math.max(0, curJob.planned_qty - pace.remaining_qty);
+      const effQty = curJob.is_doubles ? usedQty / 2 : usedQty;
+      curTonnage = effQty * (curJob.weight_kg || 0) / 1000;
     }
-    return sum + (r.tonnage || 0);
-  }, 0);
+    totalTonnage += curTonnage;
+  }
   const tonnageLeft = tonnageUntilGradeChange(jobs);
   summaryStats.innerHTML = `
     <div class="statTile neutral"><div class="num">${jobs.length}</div><div class="lbl">Jobs today</div></div>
