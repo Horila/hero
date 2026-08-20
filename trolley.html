@@ -623,6 +623,11 @@ function getChatName(){
   return name;
 }
 
+// Read-receipt name shouldn't prompt — only sending a message should ever interrupt with that dialog.
+function getStoredChatName(){
+  return localStorage.getItem(CHAT_NAME_KEY) || 'Trolley';
+}
+
 function updateChatDot(){
   const seen = localStorage.getItem(CHAT_SEEN_KEY) || '';
   const unread = lastChatMessages.some(m => m.sender_role === 'admin' && m.created_at > seen);
@@ -651,6 +656,18 @@ function renderChatMessages(){
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
+// Marks admin messages read on the server (read_at/read_by) so main.html can
+// show if/when/by-whom they were read — only while the panel is actually open,
+// same as the old local-only markChatSeen.
+async function markAdminMessagesReadOnServer(){
+  const unread = lastChatMessages.filter(m => m.sender_role === 'admin' && !m.read_at);
+  if(!unread.length) return;
+  const { error } = await supa.from('chat_messages')
+    .update({ read_at: new Date().toISOString(), read_by: getStoredChatName() })
+    .in('id', unread.map(m => m.id));
+  if(!error) loadChat();
+}
+
 async function loadChat(){
   const day = currentDay || new Date().toISOString().slice(0,10);
   const { data, error } = await supa.from('chat_messages').select('*').eq('job_date', day).order('created_at', { ascending: true });
@@ -658,7 +675,7 @@ async function loadChat(){
   lastChatMessages = data || [];
   renderChatMessages();
   updateChatDot();
-  if(chatOpen) markChatSeen();
+  if(chatOpen){ markChatSeen(); markAdminMessagesReadOnServer(); }
 }
 
 chatToggleBtn.addEventListener('click', ()=>{

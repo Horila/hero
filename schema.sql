@@ -158,7 +158,9 @@ create table if not exists chat_messages (
   sender_role text not null check (sender_role in ('admin', 'trolley')),
   sender_name text,
   body text not null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  read_at timestamptz,
+  read_by text
 );
 
 create index if not exists chat_messages_job_date_idx on chat_messages (job_date, created_at);
@@ -495,6 +497,23 @@ create policy "anon can send published-day chat"
   );
 
 grant select, insert on chat_messages to anon, authenticated;
+
+-- Read receipts: trolley boys mark an admin message read_at/read_by when they
+-- open the chat panel on their side, so main.html can show if/when/by-whom.
+drop policy if exists "anon can mark admin chat read" on chat_messages;
+create policy "anon can mark admin chat read"
+  on chat_messages for update
+  to anon
+  using (
+    sender_role = 'admin'
+    and job_date = (select job_date from published_day where id = 1)
+  )
+  with check (
+    sender_role = 'admin'
+    and job_date = (select job_date from published_day where id = 1)
+  );
+
+grant update on chat_messages to anon;
 
 -- item_reference_notes: same read/write split as jobs for Horatio (authenticated
 -- read, full_access-gated writes); anon read is scoped to visible_to_trolley = true

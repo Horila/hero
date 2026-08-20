@@ -261,6 +261,7 @@
   .chatMsg .chatMeta{font-family:var(--mono);font-size:9px;color:var(--dim2);margin-bottom:2px;}
   .chatMsg.mine{align-self:flex-end;background:var(--amber-bg);}
   .chatMsg.theirs{align-self:flex-start;background:var(--panel2);}
+  .chatReceipt{font-family:var(--mono);font-size:9px;color:var(--dim2);margin-top:3px;text-align:right;}
   #chatEmpty{font-family:var(--mono);font-size:11px;color:var(--dim);text-align:center;padding:10px 0;}
   .chatInputRow{display:flex;gap:6px;padding:8px 10px 10px 10px;border-top:1px solid var(--line);}
   .chatInputRow input{margin-top:0;}
@@ -842,7 +843,11 @@ function renderChatMessages(){
     const mine = m.sender_role === 'admin';
     const who = mine ? 'You' : (m.sender_name || 'Trolley');
     const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    return `<div class="chatMsg ${mine ? 'mine' : 'theirs'}"><div class="chatMeta">${esc(who)} · ${time}</div>${esc(m.body)}</div>`;
+    const readTime = m.read_at ? new Date(m.read_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    const receipt = mine ? (m.read_at
+      ? `<div class="chatReceipt">✓ Seen by ${esc(m.read_by || 'Trolley')} · ${readTime}</div>`
+      : `<div class="chatReceipt">Sent</div>`) : '';
+    return `<div class="chatMsg ${mine ? 'mine' : 'theirs'}"><div class="chatMeta">${esc(who)} · ${time}</div>${esc(m.body)}${receipt}</div>`;
   }).join('');
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
