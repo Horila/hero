@@ -1235,6 +1235,13 @@ function fieldsHtml(job, idAttr, idVal, opts){
       <div class="fieldRow">${mingzhi}${status}</div>`;
 
   const trialId = `${opts.trialIdPrefix}${idVal}`, doublesId = `${opts.doublesIdPrefix}${idVal}`;
+  const forceNewHtml = opts.forceNewIdPrefix ? (()=>{
+    const forceNewId = `${opts.forceNewIdPrefix}${idVal}`;
+    return `<div class="checkboxRow">
+        <input type="checkbox" ${idAttr}="${idVal}" data-f="force_new" id="${forceNewId}" ${job.force_new ? 'checked':''}>
+        <label for="${forceNewId}" style="font-size:12px;">Duplicate job — save as separate entry even if AM/item number already exists today</label>
+      </div>`;
+  })() : '';
   return `${rowsHtml}
       <div class="checkboxRow">
         <input type="checkbox" ${idAttr}="${idVal}" data-f="is_trial" id="${trialId}" ${job.is_trial ? 'checked':''}>
@@ -1243,7 +1250,8 @@ function fieldsHtml(job, idAttr, idVal, opts){
       <div class="checkboxRow">
         <input type="checkbox" ${idAttr}="${idVal}" data-f="is_doubles" id="${doublesId}" ${job.is_doubles ? 'checked':''}>
         <label for="${doublesId}" style="font-size:12px;">Doubles (2 cores per mould)</label>
-      </div>`;
+      </div>
+      ${forceNewHtml}`;
 }
 
 // Shared list-of-notes + add-note markup for a PART (by item_number) — used by the day's
@@ -1360,7 +1368,7 @@ function renderReview(){
     card.className = 'jobCard';
     card.innerHTML = `
       <div class="rowTop"><span class="idx">JOB ${i+1}</span><button class="removeBtn" data-i="${i}">✕</button></div>
-      ${fieldsHtml(job, 'data-i', i, { trialIdPrefix: 'trial', doublesIdPrefix: 'doubles' })}
+      ${fieldsHtml(job, 'data-i', i, { trialIdPrefix: 'trial', doublesIdPrefix: 'doubles', forceNewIdPrefix: 'forcenew' })}
     `;
     reviewList.appendChild(card);
   });
@@ -1471,7 +1479,8 @@ saveAllBtn.addEventListener('click', async ()=>{
     is_trial: !!j.is_trial,
     is_doubles: !!j.is_doubles,
     job_date: jobDate,
-    needs_dipping: !!dipMemory[j.item_number]
+    needs_dipping: !!dipMemory[j.item_number],
+    force_new: !!j.force_new
   })).filter(r => r.am_number); // AM number is the join key, refuse to save without it
 
   const missingCount = extractedJobs.length - rows.length;
@@ -1482,7 +1491,7 @@ saveAllBtn.addEventListener('click', async ()=>{
   // different item numbers under the same AM number are separate jobs now,
   // not a collision — see item_reference below.
   const dedupedByKey = new Map();
-  rows.forEach(r => dedupedByKey.set(`${r.am_number}|${r.item_number}|${r.job_date}`, r));
+  rows.forEach((r, i) => dedupedByKey.set(r.force_new ? `forcenew-${i}` : `${r.am_number}|${r.item_number}|${r.job_date}`, r));
   const dedupedRows = [...dedupedByKey.values()];
   const dupCount = rows.length - dedupedRows.length;
 
@@ -1553,12 +1562,13 @@ saveAllBtn.addEventListener('click', async ()=>{
   const forcedNewRows = new Set(discrepancies.filter(d => d.resolution === 'newEntry').map(d => d.row));
   let nextNewSortOrder = Date.now();
   dedupedRows.forEach(r => {
-    const existing = forcedNewRows.has(r) ? null : existingByKey[`${r.am_number}|${r.item_number || ''}`];
+    const existing = (forcedNewRows.has(r) || r.force_new) ? null : existingByKey[`${r.am_number}|${r.item_number || ''}`];
     if(existing){ r.id = existing.id; r.sort_order = existing.sort_order; }
     else { r.id = crypto.randomUUID(); r.sort_order = nextNewSortOrder++; }
   });
 
-  const { data: savedRows, error } = await supa.from('jobs').upsert(dedupedRows).select('id, am_number, item_number, job_date');
+  const upsertRows = dedupedRows.map(({ force_new, ...rest }) => rest); // force_new is a review-only flag, not a jobs column
+  const { data: savedRows, error } = await supa.from('jobs').upsert(upsertRows).select('id, am_number, item_number, job_date');
   if(error){ setStatus('Save failed: ' + error.message, 'err'); saveAllBtn.disabled = false; return; }
 
   // ---------- item_reference sync ----------
