@@ -727,6 +727,7 @@ async function loadPace(){
     : { current_job_id: null, started_at: null, tons_per_hour: null, remaining_qty: null };
   renderPaceCard();
   renderJobs();
+  updateStatsBar(); // "left till grade change" depends on pace.remaining_qty, not just jobs
 }
 
 let paceSaveTimer = null;
