@@ -1235,13 +1235,6 @@ function fieldsHtml(job, idAttr, idVal, opts){
       <div class="fieldRow">${mingzhi}${status}</div>`;
 
   const trialId = `${opts.trialIdPrefix}${idVal}`, doublesId = `${opts.doublesIdPrefix}${idVal}`;
-  const forceNewHtml = opts.forceNewIdPrefix ? (()=>{
-    const forceNewId = `${opts.forceNewIdPrefix}${idVal}`;
-    return `<div class="checkboxRow">
-        <input type="checkbox" ${idAttr}="${idVal}" data-f="force_new" id="${forceNewId}" ${job.force_new ? 'checked':''}>
-        <label for="${forceNewId}" style="font-size:12px;">Duplicate job — save as separate entry even if AM/item number already exists today</label>
-      </div>`;
-  })() : '';
   return `${rowsHtml}
       <div class="checkboxRow">
         <input type="checkbox" ${idAttr}="${idVal}" data-f="is_trial" id="${trialId}" ${job.is_trial ? 'checked':''}>
@@ -1250,8 +1243,7 @@ function fieldsHtml(job, idAttr, idVal, opts){
       <div class="checkboxRow">
         <input type="checkbox" ${idAttr}="${idVal}" data-f="is_doubles" id="${doublesId}" ${job.is_doubles ? 'checked':''}>
         <label for="${doublesId}" style="font-size:12px;">Doubles (2 cores per mould)</label>
-      </div>
-      ${forceNewHtml}`;
+      </div>`;
 }
 
 // Shared list-of-notes + add-note markup for a PART (by item_number) — used by the day's
@@ -1368,7 +1360,7 @@ function renderReview(){
     card.className = 'jobCard';
     card.innerHTML = `
       <div class="rowTop"><span class="idx">JOB ${i+1}</span><button class="removeBtn" data-i="${i}">✕</button></div>
-      ${fieldsHtml(job, 'data-i', i, { trialIdPrefix: 'trial', doublesIdPrefix: 'doubles', forceNewIdPrefix: 'forcenew' })}
+      ${fieldsHtml(job, 'data-i', i, { trialIdPrefix: 'trial', doublesIdPrefix: 'doubles' })}
     `;
     reviewList.appendChild(card);
   });
@@ -1479,27 +1471,14 @@ saveAllBtn.addEventListener('click', async ()=>{
     is_trial: !!j.is_trial,
     is_doubles: !!j.is_doubles,
     job_date: jobDate,
-    needs_dipping: !!dipMemory[j.item_number],
-    force_new: !!j.force_new
+    needs_dipping: !!dipMemory[j.item_number]
   })).filter(r => r.am_number); // AM number is the join key, refuse to save without it
 
   const missingCount = extractedJobs.length - rows.length;
+  const dedupedRows = rows; // every row is always saved as its own job — same AM/item number twice in a day is allowed
 
-  // Postgres upsert rejects a batch where two rows target the same primary
-  // key — keep the last occurrence when the same AM number/item/date shows
-  // up twice (e.g. OCR misread a job number the same way on two rows). Two
-  // different item numbers under the same AM number are separate jobs now,
-  // not a collision — see item_reference below.
-  const dedupedByKey = new Map();
-  rows.forEach((r, i) => dedupedByKey.set(r.force_new ? `forcenew-${i}` : `${r.am_number}|${r.item_number}|${r.job_date}`, r));
-  const dedupedRows = [...dedupedByKey.values()];
-  const dupCount = rows.length - dedupedRows.length;
-
-  if(missingCount || dupCount){
-    const msgs = [];
-    if(missingCount) msgs.push(`${missingCount} row(s) skipped — AM number is required to save`);
-    if(dupCount) msgs.push(`${dupCount} duplicate row(s) skipped — same AM number/item/date appeared twice`);
-    setStatus(msgs.join('; '), 'err');
+  if(missingCount){
+    setStatus(`${missingCount} row(s) skipped — AM number is required to save`, 'err');
   }
 
   // ---------- Crosscheck against item_reference ----------
@@ -1549,26 +1528,13 @@ saveAllBtn.addEventListener('click', async ()=>{
   // sort_order's DB default (whole-second epoch) can tie across every row in one scan
   // batch, so the list order after save falls back to whatever order Postgres feels
   // like returning ties in — not scan order. Assign explicit, strictly-increasing
-  // sort_order values ourselves for genuinely new jobs (preserving scan order), and
-  // carry forward the existing id/sort_order for jobs already on this date so
-  // re-scanning a job never moves it in the list or duplicates it. "Save as new
-  // entry" always counts as new, even if an AM number + item number match exists.
-  const { data: existingForDate, error: existingError } = await supa.from('jobs')
-    .select('id, am_number, item_number, sort_order')
-    .eq('job_date', jobDate)
-    .in('am_number', dedupedRows.map(r => r.am_number));
-  if(existingError){ setStatus('Save failed: ' + existingError.message, 'err'); saveAllBtn.disabled = false; return; }
-  const existingByKey = Object.fromEntries((existingForDate || []).map(j => [`${j.am_number}|${j.item_number || ''}`, j]));
-  const forcedNewRows = new Set(discrepancies.filter(d => d.resolution === 'newEntry').map(d => d.row));
+  // sort_order values ourselves so scan order is preserved. Every row is a fresh
+  // insert — the same AM/item number can legitimately appear more than once in a
+  // day (a job genuinely run twice), so this never matches against existing rows.
   let nextNewSortOrder = Date.now();
-  dedupedRows.forEach(r => {
-    const existing = (forcedNewRows.has(r) || r.force_new) ? null : existingByKey[`${r.am_number}|${r.item_number || ''}`];
-    if(existing){ r.id = existing.id; r.sort_order = existing.sort_order; }
-    else { r.id = crypto.randomUUID(); r.sort_order = nextNewSortOrder++; }
-  });
+  dedupedRows.forEach(r => { r.id = crypto.randomUUID(); r.sort_order = nextNewSortOrder++; });
 
-  const upsertRows = dedupedRows.map(({ force_new, ...rest }) => rest); // force_new is a review-only flag, not a jobs column
-  const { data: savedRows, error } = await supa.from('jobs').upsert(upsertRows).select('id, am_number, item_number, job_date');
+  const { data: savedRows, error } = await supa.from('jobs').upsert(dedupedRows).select('id, am_number, item_number, job_date');
   if(error){ setStatus('Save failed: ' + error.message, 'err'); saveAllBtn.disabled = false; return; }
 
   // ---------- item_reference sync ----------
