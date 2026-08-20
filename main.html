@@ -1057,12 +1057,15 @@ pushLiveBtn.addEventListener('click', async ()=>{
 
 let extractedJobs = [];
 let jobs = [];
-let jobNotesByJob = {}; // job_id -> array of job_notes rows, newest first
-let jobNotesModalJobId = null;
-// Unsent "add a note" drafts, keyed by job id — a full renderJobs() (triggered by
-// something unrelated, e.g. toggling Edit on a different job) would otherwise wipe
+// Notes are keyed by item_number (the PART), not by job id — the same item_reference_notes
+// row is shown and editable from the day's job list, the standalone popup, and the Parts
+// panel, so a note added anywhere shows up everywhere else too. See notesSectionHtml().
+let notesByItemNumber = {};
+let notesModalItemNumber = null;
+// Unsent "add a note" drafts, keyed by item_number — a full re-render (triggered by
+// something unrelated, e.g. toggling Edit on a different row) would otherwise wipe
 // whatever's typed here since the textarea has no other backing state.
-let jobNoteDrafts = {};
+let noteDrafts = {};
 let editingIds = new Set();
 let draggedId = null;
 let pendingReorderWrites = Promise.resolve();
@@ -1237,14 +1240,18 @@ function fieldsHtml(job, idAttr, idVal, opts){
       </div>`;
 }
 
-// Shared list-of-notes + add-note markup, reused verbatim by the inline edit-panel
-// notes section and the standalone jobNotesModalBody popup — see jobNotesByJob.
-// view_only users get the same read-only treatment here as everywhere else in this
-// file (cf. editToggleBtn) — the write handlers below already refuse the DB write,
-// but rendering live-looking controls that silently no-op on click is worse than
-// not showing them at all.
-function jobNotesSectionHtml(jobId){
-  const notes = jobNotesByJob[jobId] || [];
+// Shared list-of-notes + add-note markup for a PART (by item_number) — used by the day's
+// job list's inline edit panel, the standalone notes popup, AND the Parts panel's inline
+// edit panel. Same underlying item_reference_notes rows in all three, so a note added from
+// any of them shows up in the others too. view_only users get the same read-only treatment
+// here as everywhere else in this file (cf. editToggleBtn) — the write handlers below
+// already refuse the DB write, but rendering live-looking controls that silently no-op on
+// click is worse than not showing them at all.
+function notesSectionHtml(itemNumber){
+  if(!itemNumber){
+    return `<div class="notesSection" style="margin-top:10px;"><label>NOTES</label><div style="font-family:var(--mono);font-size:11px;color:var(--dim);">Add an item number to enable notes.</div></div>`;
+  }
+  const notes = notesByItemNumber[itemNumber] || [];
   const canEdit = isFullAccess();
   const notesHtml = notes.length ? notes.map(n => `
       <div class="jobNoteRow" data-note-id="${n.id}">
@@ -1252,20 +1259,88 @@ function jobNotesSectionHtml(jobId){
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:4px;">
           <span style="font-family:var(--mono);font-size:10px;color:var(--dim);">${esc(new Date(n.created_at).toLocaleString())}</span>
           ${canEdit ? `
-          <label class="jrDip"><input type="checkbox" class="jobNoteVisibleCb" data-note-id="${n.id}" data-job-id="${jobId}" ${n.visible_to_trolley ? 'checked' : ''}> Show on trolley sheet</label>
-          <button class="removeBtn jobNoteDeleteBtn" data-note-id="${n.id}" data-job-id="${jobId}" type="button">✕</button>`
+          <label class="jrDip"><input type="checkbox" class="noteVisibleCb" data-note-id="${n.id}" data-item-number="${esc(itemNumber)}" ${n.visible_to_trolley ? 'checked' : ''}> Show on trolley sheet</label>
+          <button class="removeBtn noteDeleteBtn" data-note-id="${n.id}" data-item-number="${esc(itemNumber)}" type="button">✕</button>`
           : (n.visible_to_trolley ? `<span style="font-family:var(--mono);font-size:10px;color:var(--dim);">On trolley sheet</span>` : '')}
         </div>
       </div>`).join('') : `<div style="font-family:var(--mono);font-size:11px;color:var(--dim);">No notes yet.</div>`;
 
   return `
-    <div class="jobNotesSection" data-job-id="${jobId}" style="margin-top:10px;">
+    <div class="notesSection" data-item-number="${esc(itemNumber)}" style="margin-top:10px;">
       <label>NOTES</label>
       ${notesHtml}
       ${canEdit ? `
-      <textarea class="jobNoteNewBody" rows="2" placeholder="Add a note…" style="margin-top:8px;">${esc(jobNoteDrafts[jobId] || '')}</textarea>
-      <button class="jobNoteAddBtn" data-job-id="${jobId}" type="button" style="width:auto;margin-top:6px;padding:6px 12px;font-size:12px;">+ Add note</button>` : ''}
+      <textarea class="noteNewBody" rows="2" placeholder="Add a note…" style="margin-top:8px;">${esc(noteDrafts[itemNumber] || '')}</textarea>
+      <button class="noteAddBtn" data-item-number="${esc(itemNumber)}" type="button" style="width:auto;margin-top:6px;padding:6px 12px;font-size:12px;">+ Add note</button>` : ''}
     </div>`;
+}
+
+async function ensureItemReferenceId(itemNumber){
+  const known = itemRefRows.find(r => r.item_number === itemNumber);
+  if(known) return known.id;
+  const { data } = await supa.from('item_reference').select('id').eq('item_number', itemNumber).limit(1).maybeSingle();
+  if(data) return data.id;
+  // No item_reference row yet — seed it from a currently-loaded job sharing this item
+  // number if there is one, rather than inserting a blank stub. A blank stub's null
+  // weight_kg/is_doubles/needs_dipping would otherwise read as a real value the first
+  // time this part is properly scanned, producing a false crosscheck discrepancy popup.
+  const seedJob = jobs.find(j => j.item_number === itemNumber);
+  const { data: created, error } = await supa.from('item_reference').insert({
+    item_number: itemNumber,
+    am_number: seedJob ? seedJob.am_number : null,
+    grade: seedJob ? seedJob.grade : null,
+    weight_kg: seedJob ? seedJob.weight_kg : null,
+    is_doubles: seedJob ? !!seedJob.is_doubles : false,
+    needs_dipping: seedJob ? !!seedJob.needs_dipping : false
+  }).select('id').single();
+  if(error){ alert('Failed to prepare part record: ' + error.message); return null; }
+  return created.id;
+}
+
+async function addNote(btn){
+  if(!isFullAccess()) return;
+  const textarea = btn.closest('.notesSection').querySelector('.noteNewBody');
+  const body = textarea.value.trim();
+  if(!body) return;
+  const itemNumber = btn.dataset.itemNumber;
+  const refId = await ensureItemReferenceId(itemNumber);
+  if(!refId) return;
+  const { error } = await supa.from('item_reference_notes').insert({ item_reference_id: refId, item_number: itemNumber, body });
+  if(error){ alert('Failed to add note: ' + error.message); return; }
+  delete noteDrafts[itemNumber];
+  await refreshNotes(itemNumber);
+}
+
+async function deleteNote(btn){
+  if(!isFullAccess()) return;
+  if(!confirm(`Delete this note? This can't be undone.`)) return;
+  const { error } = await supa.from('item_reference_notes').delete().eq('id', btn.dataset.noteId);
+  if(error){ alert('Failed to delete note: ' + error.message); return; }
+  await refreshNotes(btn.dataset.itemNumber);
+}
+
+async function toggleNoteVisible(cb){
+  if(!isFullAccess()){ cb.checked = !cb.checked; return; }
+  const { error } = await supa.from('item_reference_notes').update({ visible_to_trolley: cb.checked }).eq('id', cb.dataset.noteId);
+  if(error){ alert('Failed to update: ' + error.message); cb.checked = !cb.checked; return; }
+  await refreshNotes(cb.dataset.itemNumber);
+}
+
+// Targeted patch: replaces every currently-rendered .notesSection for this item_number
+// (job list inline, Parts list inline, and the standalone popup all share the same
+// class/data attribute) rather than a full re-render, so an unrelated in-progress edit
+// elsewhere survives. Only falls back to renderJobs() when the 📝 icon itself needs to
+// appear/disappear on a job row, since that icon lives inside renderJobs()'s own template.
+async function refreshNotes(itemNumber){
+  const hadNotes = (notesByItemNumber[itemNumber] || []).length > 0;
+  await loadNotesForItemNumbers([itemNumber]);
+  const hasNotes = (notesByItemNumber[itemNumber] || []).length > 0;
+
+  if(hadNotes !== hasNotes) renderJobs();
+
+  document.querySelectorAll('.notesSection').forEach(el => {
+    if(el.dataset.itemNumber === itemNumber) el.outerHTML = notesSectionHtml(itemNumber);
+  });
 }
 
 function renderReview(){
@@ -1585,20 +1660,22 @@ async function loadJobs(){
   if(error){ jobList.innerHTML = '<div style="color:var(--red);font-family:var(--mono);font-size:12px;">Error: '+esc(error.message)+'</div>'; return; }
   jobs = data || [];
   editingIds = new Set([...editingIds].filter(id => jobs.some(j => j.id === id)));
-  await loadJobNotes();
+  await loadNotesForItemNumbers(jobs.map(j => j.item_number));
   renderJobs();
   updateStatsBar();
 }
 
-async function loadJobNotes(){
-  jobNotesByJob = {};
-  if(!jobs.length) return;
-  const { data, error } = await supa.from('job_notes').select('*').in('job_id', jobs.map(j => j.id)).order('created_at', { ascending: false });
-  if(error){ console.error('Failed to load job notes:', error.message); return; }
-  (data || []).forEach(n=>{
-    if(!jobNotesByJob[n.job_id]) jobNotesByJob[n.job_id] = [];
-    jobNotesByJob[n.job_id].push(n);
-  });
+// Fetches item_reference_notes for the given item_numbers and merges them into
+// notesByItemNumber, clearing stale entries only for the item_numbers requested — so a
+// call scoped to the job list doesn't wipe data the Parts panel loaded, and vice versa.
+async function loadNotesForItemNumbers(itemNumbers){
+  const wanted = [...new Set(itemNumbers.filter(Boolean))];
+  if(!wanted.length) return;
+  const { data, error } = await supa.from('item_reference_notes').select('*')
+    .in('item_number', wanted).order('created_at', { ascending: false });
+  if(error){ console.error('item_reference_notes lookup failed:', error); return; }
+  wanted.forEach(n => { delete notesByItemNumber[n]; });
+  (data || []).forEach(n => { (notesByItemNumber[n.item_number] ||= []).push(n); });
 }
 
 // planned_qty is always raw cores, same unit as counted_total — doubles'
@@ -1676,7 +1753,7 @@ function renderJobsMobile(){
             <span class="jrGrade">${esc(j.grade) || '—'}</span>
             ${j.is_trial ? '<span class="badge badge-trial">TRIAL</span>' : ''}
             ${j.still_making ? '<span class="badge badge-warn">MAKING</span>' : ''}
-            ${(jobNotesByJob[j.id] || []).length ? `<button class="badge jobNotesBtn" data-id="${j.id}" type="button" title="View notes">📝</button>` : ''}
+            ${(notesByItemNumber[j.item_number] || []).length ? `<button class="badge jobNotesBtn" data-item-number="${esc(j.item_number)}" type="button" title="View notes">📝</button>` : ''}
           </div>
           <div class="jrStats">
             <span class="jrCount ${short ? 'jrShort' : 'jrOk'}">${counted}/${planned ?? '—'}</span>
@@ -1690,7 +1767,7 @@ function renderJobsMobile(){
         ${editing ? `
         <div class="editPanel">
           ${fieldsHtml(j, 'data-id', j.id, { trialIdPrefix: 'editTrial', doublesIdPrefix: 'editDoubles' })}
-          ${jobNotesSectionHtml(j.id)}
+          ${notesSectionHtml(j.item_number)}
           ${j.comment ? `<div class="jrComment">"${esc(j.comment)}"</div>` : ''}
           <div class="manageSaveState" data-savestate="${j.id}"></div>
           <button class="danger deleteJobBtn" data-id="${j.id}" style="margin-top:10px;">Delete job</button>
@@ -1740,7 +1817,7 @@ function renderJobsDesktop(){
         <td class="roText">${esc(j.grade) || '—'}</td>
         <td class="roText">${esc(j.item_number) || '—'}</td>
         <td class="roText">${esc(j.status) || '—'}</td>
-        <td>${j.is_trial ? '<span class="badge badge-trial">TRIAL</span>' : ''} ${j.still_making ? '<span class="badge badge-warn">MAKING</span>' : ''} ${(jobNotesByJob[j.id] || []).length ? `<button class="badge jobNotesBtn" data-id="${j.id}" type="button" title="View notes">📝</button>` : ''}</td>
+        <td>${j.is_trial ? '<span class="badge badge-trial">TRIAL</span>' : ''} ${j.still_making ? '<span class="badge badge-warn">MAKING</span>' : ''} ${(notesByItemNumber[j.item_number] || []).length ? `<button class="badge jobNotesBtn" data-item-number="${esc(j.item_number)}" type="button" title="View notes">📝</button>` : ''}</td>
         <td class="roText">${j.weight_kg ?? '—'}</td>
         <td class="roText">${planned ?? '—'}</td>
         <td>
@@ -1759,7 +1836,7 @@ function renderJobsDesktop(){
       <tr class="editDrawerRow" data-id="${j.id}">
         <td colspan="16"><div class="editPanel">
           ${fieldsHtml(j, 'data-id', j.id, { wide: true, trialIdPrefix: 'dTrial', doublesIdPrefix: 'dDoubles' })}
-          ${jobNotesSectionHtml(j.id)}
+          ${notesSectionHtml(j.item_number)}
           ${j.comment ? `<div class="jrComment">"${esc(j.comment)}"</div>` : ''}
           <div class="manageSaveState" data-savestate="${j.id}"></div>
           <button class="danger deleteJobBtn" data-id="${j.id}" style="margin-top:10px;width:auto;">Delete job</button>
@@ -1778,8 +1855,8 @@ function renderJobsDesktop(){
 
 // Delegated listeners — bound once, never re-bound on render.
 jobList.addEventListener('input', (e)=>{
-  const draftArea = e.target.closest('.jobNoteNewBody');
-  if(draftArea){ jobNoteDrafts[draftArea.closest('.jobNotesSection').dataset.jobId] = draftArea.value; return; }
+  const draftArea = e.target.closest('.noteNewBody');
+  if(draftArea){ noteDrafts[draftArea.closest('.notesSection').dataset.itemNumber] = draftArea.value; return; }
   if(!isFullAccess()) return;
   const inp = e.target.closest('input[data-f], textarea[data-f]');
   if(!inp || inp.type === 'checkbox') return;
@@ -1848,94 +1925,45 @@ async function handleDippingToggle(cb){
   updateStatsBar();
 }
 
-// ---------- Job notes (job_notes table — timestamped list per job) ----------
+// ---------- Notes popup (quick access to notesSectionHtml without entering edit mode) ----------
 // Read access (opening the popup, seeing the list) is available to every logged-in user,
-// same as job_notes' RLS select grant to `authenticated`; only the writes below are gated.
-function openJobNotesModal(jobId){
-  jobNotesModalJobId = jobId;
-  const job = jobs.find(j => j.id === jobId);
-  jobNotesModalTitle.textContent = job ? `NOTES — ${job.am_number}` : 'NOTES';
-  jobNotesModalBody.innerHTML = jobNotesSectionHtml(jobId);
+// same as item_reference_notes' RLS select grant to `authenticated`; only the writes
+// (addNote/deleteNote/toggleNoteVisible, above) are gated.
+function openNotesModal(itemNumber){
+  notesModalItemNumber = itemNumber;
+  jobNotesModalTitle.textContent = itemNumber ? `NOTES — ${itemNumber}` : 'NOTES';
+  jobNotesModalBody.innerHTML = notesSectionHtml(itemNumber);
   jobNotesModalOverlay.classList.add('open');
 }
-jobNotesModalCloseBtn.addEventListener('click', ()=>{ jobNotesModalOverlay.classList.remove('open'); jobNotesModalJobId = null; });
-jobNotesModalOverlay.addEventListener('click', (e)=>{ if(e.target === jobNotesModalOverlay){ jobNotesModalOverlay.classList.remove('open'); jobNotesModalJobId = null; } });
-
-// Re-fetches job_notes for all loaded jobs and patches just this job's notes UI back
-// into place — deliberately NOT a full renderJobs() on the common path, so an in-progress
-// draft in another row's notes textarea (or another field entirely) isn't wiped by, say,
-// ticking a visibility checkbox on this one. Only falls back to a full render when the
-// 📝 icon itself needs to appear/disappear (notes count crossing 0 <-> 1+), since that
-// icon lives inside the row's own template and isn't a standalone patchable element.
-async function refreshJobNotes(jobId){
-  const hadNotes = (jobNotesByJob[jobId] || []).length > 0;
-  await loadJobNotes();
-  const hasNotes = (jobNotesByJob[jobId] || []).length > 0;
-
-  if(hadNotes !== hasNotes){
-    renderJobs();
-  } else {
-    jobList.querySelectorAll(`.jobNotesSection[data-job-id="${jobId}"]`).forEach(el => {
-      el.outerHTML = jobNotesSectionHtml(jobId);
-    });
-  }
-  if(jobNotesModalOverlay.classList.contains('open') && jobNotesModalJobId === jobId){
-    jobNotesModalBody.innerHTML = jobNotesSectionHtml(jobId);
-  }
-}
-
-async function addJobNote(btn){
-  if(!isFullAccess()) return;
-  const textarea = btn.closest('.jobNotesSection').querySelector('.jobNoteNewBody');
-  const body = textarea.value.trim();
-  if(!body) return;
-  const { error } = await supa.from('job_notes').insert({ job_id: btn.dataset.jobId, body });
-  if(error){ alert('Failed to add note: ' + error.message); return; }
-  delete jobNoteDrafts[btn.dataset.jobId];
-  await refreshJobNotes(btn.dataset.jobId);
-}
-
-async function deleteJobNote(btn){
-  if(!isFullAccess()) return;
-  if(!confirm(`Delete this note? This can't be undone.`)) return;
-  const { error } = await supa.from('job_notes').delete().eq('id', btn.dataset.noteId);
-  if(error){ alert('Failed to delete note: ' + error.message); return; }
-  await refreshJobNotes(btn.dataset.jobId);
-}
-
-async function toggleJobNoteVisible(cb){
-  if(!isFullAccess()){ cb.checked = !cb.checked; return; }
-  const { error } = await supa.from('job_notes').update({ visible_to_trolley: cb.checked }).eq('id', cb.dataset.noteId);
-  if(error){ alert('Failed to update: ' + error.message); cb.checked = !cb.checked; return; }
-  await refreshJobNotes(cb.dataset.jobId);
-}
+jobNotesModalCloseBtn.addEventListener('click', ()=>{ jobNotesModalOverlay.classList.remove('open'); notesModalItemNumber = null; });
+jobNotesModalOverlay.addEventListener('click', (e)=>{ if(e.target === jobNotesModalOverlay){ jobNotesModalOverlay.classList.remove('open'); notesModalItemNumber = null; } });
 
 jobList.addEventListener('click', (e)=>{
   const notesBtn = e.target.closest('.jobNotesBtn');
-  if(notesBtn){ openJobNotesModal(notesBtn.dataset.id); return; }
-  const addBtn = e.target.closest('.jobNoteAddBtn');
-  if(addBtn){ addJobNote(addBtn); return; }
-  const delBtn = e.target.closest('.jobNoteDeleteBtn');
-  if(delBtn) deleteJobNote(delBtn);
+  if(notesBtn){ openNotesModal(notesBtn.dataset.itemNumber); return; }
+  const addBtn = e.target.closest('.noteAddBtn');
+  if(addBtn){ addNote(addBtn); return; }
+  const delBtn = e.target.closest('.noteDeleteBtn');
+  if(delBtn) deleteNote(delBtn);
 });
 jobList.addEventListener('change', (e)=>{
-  const cb = e.target.closest('.jobNoteVisibleCb');
-  if(cb) toggleJobNoteVisible(cb);
+  const cb = e.target.closest('.noteVisibleCb');
+  if(cb) toggleNoteVisible(cb);
 });
 
 jobNotesModalBody.addEventListener('click', (e)=>{
-  const addBtn = e.target.closest('.jobNoteAddBtn');
-  if(addBtn){ addJobNote(addBtn); return; }
-  const delBtn = e.target.closest('.jobNoteDeleteBtn');
-  if(delBtn) deleteJobNote(delBtn);
+  const addBtn = e.target.closest('.noteAddBtn');
+  if(addBtn){ addNote(addBtn); return; }
+  const delBtn = e.target.closest('.noteDeleteBtn');
+  if(delBtn) deleteNote(delBtn);
 });
 jobNotesModalBody.addEventListener('change', (e)=>{
-  const cb = e.target.closest('.jobNoteVisibleCb');
-  if(cb) toggleJobNoteVisible(cb);
+  const cb = e.target.closest('.noteVisibleCb');
+  if(cb) toggleNoteVisible(cb);
 });
 jobNotesModalBody.addEventListener('input', (e)=>{
-  const draftArea = e.target.closest('.jobNoteNewBody');
-  if(draftArea) jobNoteDrafts[draftArea.closest('.jobNotesSection').dataset.jobId] = draftArea.value;
+  const draftArea = e.target.closest('.noteNewBody');
+  if(draftArea) noteDrafts[draftArea.closest('.notesSection').dataset.itemNumber] = draftArea.value;
 });
 
 // Offline-safe save: failed saves persist in localStorage and auto-retry on
@@ -2134,94 +2162,14 @@ function renumberAndPersist(){
 let itemRefRows = [];
 let itemRefSearchTerm = '';
 let itemRefEditIds = new Set();
-let itemRefNotesByRef = {};
-// Same reasoning as jobNoteDrafts above — a full renderItemRefList() (edit-toggle on
-// another row, or typing in search) would otherwise wipe an unsent draft.
-let itemRefNoteDrafts = {};
 
 async function loadItemRefList(){
   const { data, error } = await supa.from('item_reference').select('*').order('item_number');
   if(error){ itemRefListBody.innerHTML = '<div style="color:var(--red);font-family:var(--mono);font-size:12px;">Error: '+esc(error.message)+'</div>'; return; }
   itemRefRows = data || [];
   itemRefEditIds = new Set([...itemRefEditIds].filter(id => itemRefRows.some(r => r.id === id)));
-  await loadItemRefNotes();
+  await loadNotesForItemNumbers(itemRefRows.map(r => r.item_number));
   renderItemRefList();
-}
-
-async function loadItemRefNotes(){
-  if(!itemRefRows.length){ itemRefNotesByRef = {}; return; }
-  const { data, error } = await supa.from('item_reference_notes').select('*')
-    .in('item_reference_id', itemRefRows.map(r => r.id)).order('created_at', { ascending: false });
-  if(error){ console.error('item_reference_notes lookup failed:', error); itemRefNotesByRef = {}; return; }
-  itemRefNotesByRef = {};
-  (data || []).forEach(n => { (itemRefNotesByRef[n.item_reference_id] ||= []).push(n); });
-}
-
-// Mirrors jobNotesSectionHtml's shape (list + timestamp + trolley-visibility checkbox +
-// add-note bar), but against item_reference_notes/item_reference_id instead of
-// job_notes/job_id — kept as its own function rather than a shared parameterized one,
-// since the two write against different tables with different FK columns.
-function itemRefNotesSectionHtml(refId){
-  const notes = itemRefNotesByRef[refId] || [];
-  const canEdit = isFullAccess();
-  const notesHtml = notes.length ? notes.map(n => `
-      <div class="jobNoteRow" data-note-id="${n.id}">
-        <div>${esc(n.body)}</div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:4px;">
-          <span style="font-family:var(--mono);font-size:10px;color:var(--dim);">${esc(new Date(n.created_at).toLocaleString())}</span>
-          ${canEdit ? `
-          <label class="jrDip"><input type="checkbox" class="itemRefNoteVisibleCb" data-note-id="${n.id}" data-ref-id="${refId}" ${n.visible_to_trolley ? 'checked' : ''}> Show on trolley sheet</label>
-          <button class="removeBtn itemRefNoteDeleteBtn" data-note-id="${n.id}" data-ref-id="${refId}" type="button">✕</button>`
-          : (n.visible_to_trolley ? `<span style="font-family:var(--mono);font-size:10px;color:var(--dim);">On trolley sheet</span>` : '')}
-        </div>
-      </div>`).join('') : `<div style="font-family:var(--mono);font-size:11px;color:var(--dim);">No notes yet.</div>`;
-
-  return `
-    <div class="itemRefNotesSection" data-ref-id="${refId}" style="margin-top:10px;">
-      <label>NOTES</label>
-      ${notesHtml}
-      ${canEdit ? `
-      <textarea class="itemRefNoteNewBody" rows="2" placeholder="Add a note…" style="margin-top:8px;">${esc(itemRefNoteDrafts[refId] || '')}</textarea>
-      <button class="itemRefNoteAddBtn" data-ref-id="${refId}" type="button" style="width:auto;margin-top:6px;padding:6px 12px;font-size:12px;">+ Add note</button>` : ''}
-    </div>`;
-}
-
-async function addItemRefNote(btn){
-  if(!isFullAccess()) return;
-  const textarea = btn.closest('.itemRefNotesSection').querySelector('.itemRefNoteNewBody');
-  const body = textarea.value.trim();
-  if(!body) return;
-  const refId = btn.dataset.refId;
-  const row = itemRefRows.find(r => r.id === refId);
-  if(!row) return;
-  const { error } = await supa.from('item_reference_notes').insert({ item_reference_id: refId, item_number: row.item_number, body });
-  if(error){ alert('Failed to add note: ' + error.message); return; }
-  delete itemRefNoteDrafts[refId];
-  await refreshItemRefNotes(refId);
-}
-
-async function deleteItemRefNote(btn){
-  if(!isFullAccess()) return;
-  if(!confirm(`Delete this note? This can't be undone.`)) return;
-  const { error } = await supa.from('item_reference_notes').delete().eq('id', btn.dataset.noteId);
-  if(error){ alert('Failed to delete note: ' + error.message); return; }
-  await refreshItemRefNotes(btn.dataset.refId);
-}
-
-async function toggleItemRefNoteVisible(cb){
-  if(!isFullAccess()){ cb.checked = !cb.checked; return; }
-  const { error } = await supa.from('item_reference_notes').update({ visible_to_trolley: cb.checked }).eq('id', cb.dataset.noteId);
-  if(error){ alert('Failed to update: ' + error.message); cb.checked = !cb.checked; return; }
-  await refreshItemRefNotes(cb.dataset.refId);
-}
-
-// Targeted patch, not a full renderItemRefList() — same reasoning as refreshJobNotes()
-// above: avoids nuking another row's in-progress edit/draft over an unrelated note action.
-async function refreshItemRefNotes(refId){
-  await loadItemRefNotes();
-  itemRefListBody.querySelectorAll(`.itemRefNotesSection[data-ref-id="${refId}"]`).forEach(el => {
-    el.outerHTML = itemRefNotesSectionHtml(refId);
-  });
 }
 
 function renderItemRefList(){
@@ -2263,7 +2211,7 @@ function renderItemRefList(){
         <input type="checkbox" data-id="${r.id}" data-f="needs_dipping" id="refDip${r.id}" ${r.needs_dipping ? 'checked' : ''}>
         <label for="refDip${r.id}" style="font-size:12px;">Dipping</label>
       </div>
-      ${itemRefNotesSectionHtml(r.id)}
+      ${notesSectionHtml(r.item_number)}
       <button class="removeBtn itemRefDeleteBtn" data-id="${r.id}" style="margin-top:6px;width:auto;">✕ Delete</button>
       ` : ''}
     </div>
@@ -2277,29 +2225,35 @@ itemRefSearch.addEventListener('input', ()=>{
 });
 
 itemRefListBody.addEventListener('input', (e)=>{
-  const draftArea = e.target.closest('.itemRefNoteNewBody');
-  if(draftArea) itemRefNoteDrafts[draftArea.closest('.itemRefNotesSection').dataset.refId] = draftArea.value;
+  const draftArea = e.target.closest('.noteNewBody');
+  if(draftArea) noteDrafts[draftArea.closest('.notesSection').dataset.itemNumber] = draftArea.value;
 });
 
 itemRefListBody.addEventListener('change', async (e)=>{
   if(!isFullAccess()) return;
-  const noteCb = e.target.closest('.itemRefNoteVisibleCb');
-  if(noteCb){ toggleItemRefNoteVisible(noteCb); return; }
+  const noteCb = e.target.closest('.noteVisibleCb');
+  if(noteCb){ toggleNoteVisible(noteCb); return; }
   const el = e.target.closest('[data-f]');
   if(!el) return;
   const row = itemRefRows.find(r => r.id === el.dataset.id);
   if(!row) return;
   const field = el.dataset.f;
+  const oldItemNumber = row.item_number;
   const value = el.type === 'checkbox' ? el.checked : (field === 'weight_kg' ? (el.value === '' ? null : parseFloat(el.value)) : (el.value || null));
   row[field] = value;
   const { error } = await supa.from('item_reference').update({ [field]: value, updated_at: new Date().toISOString() }).eq('id', row.id);
   if(error){ alert('Failed to save: ' + error.message); return; }
-  // item_reference_notes.item_number is a denormalized snapshot (keeps trolley.html's
-  // anon read RLS-simple, no join into item_reference) — keep it in sync so correcting
-  // an item number here doesn't orphan that part's existing notes.
-  if(field === 'item_number'){
-    const { error: syncError } = await supa.from('item_reference_notes').update({ item_number: value }).eq('item_reference_id', row.id);
-    if(syncError) console.error('item_reference_notes item_number sync failed:', syncError);
+  // item_number is the join key notes/crosscheck use to find this part elsewhere —
+  // jobs.item_number has no FK to item_reference, so correcting it here has to be
+  // pushed to both item_reference_notes (denormalized snapshot) and any jobs currently
+  // carrying the old value, or they silently fall out of sync with this row.
+  if(field === 'item_number' && oldItemNumber && oldItemNumber !== value){
+    const { error: notesSyncError } = await supa.from('item_reference_notes').update({ item_number: value }).eq('item_reference_id', row.id);
+    if(notesSyncError) console.error('item_reference_notes item_number sync failed:', notesSyncError);
+    const { error: jobsSyncError } = await supa.from('jobs').update({ item_number: value }).eq('item_number', oldItemNumber);
+    if(jobsSyncError) console.error('jobs item_number sync failed:', jobsSyncError);
+    await loadNotesForItemNumbers([oldItemNumber, value]);
+    renderJobs();
   }
 });
 
@@ -2312,10 +2266,10 @@ itemRefListBody.addEventListener('click', async (e)=>{
     renderItemRefList();
     return;
   }
-  const addNoteBtn = e.target.closest('.itemRefNoteAddBtn');
-  if(addNoteBtn){ addItemRefNote(addNoteBtn); return; }
-  const delNoteBtn = e.target.closest('.itemRefNoteDeleteBtn');
-  if(delNoteBtn){ deleteItemRefNote(delNoteBtn); return; }
+  const addNoteBtn = e.target.closest('.noteAddBtn');
+  if(addNoteBtn){ addNote(addNoteBtn); return; }
+  const delNoteBtn = e.target.closest('.noteDeleteBtn');
+  if(delNoteBtn){ deleteNote(delNoteBtn); return; }
   const btn = e.target.closest('.itemRefDeleteBtn');
   if(!btn) return;
   const row = itemRefRows.find(r => r.id === btn.dataset.id);

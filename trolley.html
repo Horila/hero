@@ -510,28 +510,21 @@ const notesTitle = document.getElementById('notesTitle');
 const notesBody = document.getElementById('notesBody');
 const notesCloseBtn = document.getElementById('notesCloseBtn');
 
-// Merges two sources into the same per-job list: job_notes (about this specific day's
-// job) and item_reference_notes (a standing note about the PART itself, matched by
-// item_number — trolley_jobs now exposes it — and fanned out to every one of today's
-// jobs that shares that item_number, not just one).
+// Notes are all in item_reference_notes now (job_notes was retired — main.html unified
+// job- and part-level notes into one store keyed by item_number). Matched by item_number
+// (trolley_jobs exposes it) and fanned out to every one of today's jobs that shares it,
+// not just one.
 async function loadJobNotes(){
   jobNotes = {};
   if(!jobs.length) return;
 
-  const { data: jn } = await supa.from('job_notes').select('*')
-    .eq('visible_to_trolley', true).in('job_id', jobs.map(j => j.job_id));
-  for(const n of (jn || [])){
-    (jobNotes[n.job_id] = jobNotes[n.job_id] || []).push({ body: n.body, created_at: n.created_at });
-  }
-
   const itemNumbers = [...new Set(jobs.map(j => j.item_number).filter(Boolean))];
-  if(itemNumbers.length){
-    const { data: irn } = await supa.from('item_reference_notes').select('*')
-      .eq('visible_to_trolley', true).in('item_number', itemNumbers);
-    for(const n of (irn || [])){
-      for(const j of jobs.filter(j => j.item_number === n.item_number)){
-        (jobNotes[j.job_id] = jobNotes[j.job_id] || []).push({ body: n.body, created_at: n.created_at });
-      }
+  if(!itemNumbers.length) return;
+  const { data } = await supa.from('item_reference_notes').select('*')
+    .eq('visible_to_trolley', true).in('item_number', itemNumbers);
+  for(const n of (data || [])){
+    for(const j of jobs.filter(j => j.item_number === n.item_number)){
+      (jobNotes[j.job_id] = jobNotes[j.job_id] || []).push({ body: n.body, created_at: n.created_at });
     }
   }
 

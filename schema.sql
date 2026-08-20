@@ -114,10 +114,12 @@ create index if not exists item_reference_item_number_idx
   on item_reference (item_number);
 
 -- ---------- Item reference notes (Horatio-facing, timestamped, per part) ----------
--- Same idea as job_notes, but for a PART (item_reference row) rather than a specific
--- day's job. item_number is denormalized (snapshotted at insert time) alongside the
--- FK so trolley.html's anon read policy needs no cross-table join. Not day-scoped —
--- a visible note follows the part wherever its item_number shows up today.
+-- The single notes store for both main.html's day's-job list and its Parts panel —
+-- keyed by item_number (the part), not by any one day's job, so a note added from
+-- either screen shows up on both. item_number is denormalized (snapshotted at insert
+-- time) alongside the item_reference_id FK so trolley.html's anon read policy needs
+-- no cross-table join. Not day-scoped — a visible note follows the part wherever its
+-- item_number shows up today.
 create table if not exists item_reference_notes (
   id uuid primary key default gen_random_uuid(),
   item_reference_id uuid not null references item_reference(id) on delete cascade,
@@ -160,20 +162,6 @@ create table if not exists chat_messages (
 );
 
 create index if not exists chat_messages_job_date_idx on chat_messages (job_date, created_at);
-
--- ---------- Job notes (Horatio-facing, timestamped, per job) ----------
--- Append-only log, not a single mutable field — each entry can be flagged
--- visible_to_trolley to also surface (read-only) on trolley.html, scoped
--- to the published day same as counts/chat_messages.
-create table if not exists job_notes (
-  id uuid primary key default gen_random_uuid(),
-  job_id uuid not null references jobs(id) on delete cascade,
-  body text not null,
-  visible_to_trolley boolean not null default false,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists job_notes_job_id_idx on job_notes (job_id);
 
 -- ---------- Additions bubble (Cr/Cu/Mo/Sn/Ni/Gr/Ti dosing) ----------
 -- Synced across Horatio's devices instead of per-browser localStorage.
@@ -315,7 +303,6 @@ alter table counts enable row level security;
 alter table dip_items enable row level security;
 alter table published_day enable row level security;
 alter table item_reference enable row level security;
-alter table job_notes enable row level security;
 alter table item_reference_notes enable row level security;
 
 revoke all on jobs from anon, authenticated;
@@ -323,7 +310,6 @@ revoke all on counts from anon, authenticated;
 revoke all on dip_items from anon, authenticated;
 revoke all on published_day from anon, authenticated;
 revoke all on item_reference from anon, authenticated;
-revoke all on job_notes from anon, authenticated;
 revoke all on item_reference_notes from anon, authenticated;
 
 -- jobs: any authenticated login can read (view_only sees everything), only
@@ -510,44 +496,10 @@ create policy "anon can send published-day chat"
 
 grant select, insert on chat_messages to anon, authenticated;
 
--- job_notes: same read/write split as jobs for Horatio; anon gets read-only,
--- only entries explicitly marked visible_to_trolley, only for the currently
--- published day — same trust boundary as counts/chat_messages.
-drop policy if exists "authenticated can read job_notes" on job_notes;
-create policy "authenticated can read job_notes"
-  on job_notes for select to authenticated using (auth.role() = 'authenticated');
-
-drop policy if exists "full access can insert job_notes" on job_notes;
-create policy "full access can insert job_notes"
-  on job_notes for insert to authenticated with check (is_full_access());
-
-drop policy if exists "full access can update job_notes" on job_notes;
-create policy "full access can update job_notes"
-  on job_notes for update to authenticated using (is_full_access()) with check (is_full_access());
-
-drop policy if exists "full access can delete job_notes" on job_notes;
-create policy "full access can delete job_notes"
-  on job_notes for delete to authenticated using (is_full_access());
-
-grant select, insert, update, delete on job_notes to authenticated;
-
-drop policy if exists "anon can read trolley-visible notes for published-day jobs" on job_notes;
-create policy "anon can read trolley-visible notes for published-day jobs"
-  on job_notes for select
-  to anon
-  using (
-    visible_to_trolley = true
-    and exists (
-      select 1 from jobs j, published_day p
-      where j.id = job_notes.job_id and p.id = 1 and j.job_date = p.job_date
-    )
-  );
-
-grant select on job_notes to anon;
-
--- item_reference_notes: same split as job_notes; anon read is NOT day-scoped (a part
--- isn't tied to one job_date the way a job_notes row is) and needs no join since
--- item_number is denormalized on the row itself.
+-- item_reference_notes: same read/write split as jobs for Horatio (authenticated
+-- read, full_access-gated writes); anon read is scoped to visible_to_trolley = true
+-- only, with no day-scoping (a part isn't tied to one job_date) and no cross-table
+-- join needed since item_number is denormalized on the row itself.
 drop policy if exists "authenticated can read item_reference_notes" on item_reference_notes;
 create policy "authenticated can read item_reference_notes"
   on item_reference_notes for select to authenticated using (auth.role() = 'authenticated');
