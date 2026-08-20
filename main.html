@@ -174,6 +174,7 @@
   .jobRow{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:6px;background:var(--panel2);
     touch-action:none;user-select:none;-webkit-touch-callout:none;transition:box-shadow .15s, transform .15s;}
   .jobRow.dragging{box-shadow:0 8px 20px rgba(0,0,0,.45);transform:scale(1.02);position:relative;z-index:5;border-color:var(--amber-dim);}
+  .jobRow.rowDone{text-decoration:line-through;opacity:.6;}
   .jrMain{display:flex;justify-content:space-between;align-items:center;gap:8px;}
   .jrTop{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:wrap;}
   .jrAm{font-family:var(--mono);font-weight:700;color:var(--amber);font-size:16px;white-space:nowrap;}
@@ -284,6 +285,7 @@
   .desktopTable tr.jobRow > td:first-child{border-left:3px solid transparent;}
   .desktopTable tr.jobRow.rowShort > td:first-child{border-left-color:var(--red);}
   .desktopTable tr.jobRow.rowMaking > td:first-child{border-left-color:var(--amber);border-left-style:dashed;}
+  .desktopTable tr.jobRow.rowDone > td{text-decoration:line-through;opacity:.6;}
   .desktopTable tr.jobRow.dragging{transform:none;box-shadow:none;background:var(--amber-bg);}
   .desktopTable .dragGrip{color:var(--dim2);cursor:grab;text-align:center;}
   .desktopTable input{padding:4px 6px;font-size:12px;margin:0;min-width:60px;}
@@ -1703,7 +1705,7 @@ function renderJobsMobile(){
     const short = isShort(j);
     const editing = editingIds.has(j.id);
     return `
-      <div class="jobRow" data-id="${j.id}">
+      <div class="jobRow ${j.is_done ? 'rowDone' : ''}" data-id="${j.id}">
         <div class="jrMain">
           <div class="jrTop">
             <span class="jrAm">${esc(j.am_number)}</span>
@@ -1769,7 +1771,7 @@ function renderJobsDesktop(){
     const pct = planned ? Math.max(0, Math.min(100, Math.round(counted / planned * 100))) : 0;
     const editing = editingIds.has(j.id);
     return `
-      <tr class="jobRow ${short ? 'rowShort' : ''} ${j.still_making ? 'rowMaking' : ''}" data-id="${j.id}">
+      <tr class="jobRow ${short ? 'rowShort' : ''} ${j.still_making ? 'rowMaking' : ''} ${j.is_done ? 'rowDone' : ''}" data-id="${j.id}">
         <td class="dragGrip">⋮⋮</td>
         <td class="amCell roText">${esc(j.am_number)}</td>
         <td class="roText">${esc(j.grade) || '—'}</td>
