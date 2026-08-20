@@ -1691,19 +1691,27 @@ function coerceField(field, value){
   return value;
 }
 
-// Sum of counted tonnage for the run of consecutive same-grade jobs starting
-// at the first not-done job in sort order — i.e. total tonnage of the
-// CURRENT grade run before the next job in sequence switches to a different
-// grade. Done jobs are skipped entirely (finished work, not part of the
-// current run).
+// Tons still to CAST for the run of consecutive same-grade jobs starting at
+// the pace card's current job (not just "first not-done" — Horatio may be
+// mid-way through a job out of sort order) through to the next grade change.
+// Uses planned tonnage, not counted-so-far, and scales the current job down
+// by pace.remaining_qty same as computeEtas — so this stays in sync with
+// whatever cores-remaining the pace card says is left on the job in hand.
 function tonnageUntilGradeChange(sortedJobs){
-  const active = sortedJobs.filter(j => !j.is_done);
-  if(!active.length) return 0;
-  const grade = active[0].grade;
+  const curId = effectiveCurrentJobId();
+  const idx = sortedJobs.findIndex(j => j.id === curId);
+  if(idx < 0) return 0;
+  const grade = sortedJobs[idx].grade;
   let total = 0;
-  for(const j of active){
+  for(let i = idx; i < sortedJobs.length; i++){
+    const j = sortedJobs[i];
+    if(j.is_done) continue;
     if(j.grade !== grade) break;
-    total += j.tonnage || 0;
+    let ton = plannedTonnage(j);
+    if(i === idx && pace.remaining_qty != null && j.planned_qty){
+      ton = ton * (pace.remaining_qty / j.planned_qty);
+    }
+    total += ton;
   }
   return total;
 }
