@@ -11,7 +11,7 @@
 <style>
   :root{
     --bg:#0a0908; --panel:#16130f; --elev:#1e1a14; --sunken:#120f0b; --line:#2a231a; --text:#e8e0d4; --dim:#8a8072;
-    --amber:#ff8a1e; --green:#5fb87a; --red:#d9432e;
+    --amber:#ff8a1e; --amber-bg:rgba(255,138,30,.18); --green:#5fb87a; --red:#d9432e;
     --mono:'SF Mono','Courier New',ui-monospace,monospace; --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
@@ -32,8 +32,8 @@
   .jrMain{display:flex;justify-content:space-between;align-items:center;gap:8px;}
   .jrTop{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;}
   .amNumber{font-family:var(--mono);font-size:15px;font-weight:700;color:var(--amber);}
-  .jobRow.rowCurrent{font-weight:700;}
-  .jobRow.rowCurrent .amNumber{font-size:18px;}
+  .jobRow.rowCurrent{font-weight:700;background:var(--amber-bg);border:1px solid var(--amber);border-left-width:4px;padding-left:9px;}
+  .jobRow.rowCurrent .amNumber{font-size:19px;}
   .planned{font-family:var(--mono);font-size:10px;color:var(--dim);}
   .mhInline{font-family:var(--mono);font-size:10px;color:var(--dim);}
   .jrRight{display:flex;align-items:center;gap:8px;flex-shrink:0;}
