@@ -37,12 +37,12 @@
     text-transform:uppercase;letter-spacing:.05em;font-weight:700;font-size:11px;
   }
 
-  input, select{
+  input, select, textarea{
     width:100%;padding:11px;border-radius:var(--radius-sm);border:1px solid var(--line);
     background:var(--bg-elev);color:var(--text);font-family:var(--sans);font-size:14px;margin-top:4px;
     transition:border-color .15s;
   }
-  input:focus, select:focus{outline:none;border-color:var(--amber-dim);}
+  input:focus, select:focus, textarea:focus{outline:none;border-color:var(--amber-dim);}
   label{font-size:10.5px;color:var(--dim);font-family:var(--mono);display:block;margin-top:10px;letter-spacing:.03em;text-transform:uppercase;}
   label:first-child{margin-top:0;}
 
@@ -94,7 +94,7 @@
   body.view-only #chatInput,
   body.view-only #chatSendBtn,
   body.view-only #pushLiveBtn,
-  body.view-only #dipMemoryList{
+  body.view-only #itemRefListBody{
     pointer-events:none;opacity:.55;
   }
 
@@ -154,7 +154,11 @@
   .topCardsRow{display:flex;flex-wrap:wrap;align-items:flex-start;gap:14px;margin-bottom:14px;}
   .topCardsRow .card{margin-bottom:0;width:fit-content;max-width:100%;}
   .topCardsRow .eqCard{width:280px;max-width:100%;}
-  #paceJobSelect{width:240px;max-width:100%;}
+  #paceCurrentJobDisplay{font-size:22px;font-weight:800;color:var(--green);line-height:1.25;margin-top:4px;}
+  /* Hardcoded, not var(--amber) — that variable was repurposed to blue for the dark-mode
+     industrial-panel restyle, so it no longer reads as amber there. This stays literally
+     amber in both themes, matching light mode's own --amber and trolley.html's. */
+  #paceNextJobDisplay{font-size:11px;color:#ff8a1e;margin-top:2px;font-family:var(--mono);}
   #paceTonsPerHour{width:240px;max-width:100%;}
   #paceRemainingQty{width:240px;max-width:100%;}
   .paceCalcRow{display:flex;align-items:center;gap:8px;margin-top:10px;}
@@ -164,6 +168,7 @@
   .badge{display:inline-block;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.03em;padding:2px 6px;border-radius:5px;white-space:nowrap;}
   .badge-warn{background:var(--red-bg);color:var(--red);}
   .badge-trial{background:var(--amber-bg);color:var(--amber);}
+  .badge.jobNotesBtn{width:auto;border:none;background:transparent;cursor:pointer;}
 
   /* ---- Compact job rows (replaces Manage + Summary tabs) ---- */
   .jobRow{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:6px;background:var(--panel2);
@@ -182,6 +187,8 @@
   .jrDip input{width:auto;margin:0;accent-color:var(--amber);}
   .editToggleBtn{width:auto;padding:4px 10px;font-size:10.5px;margin-top:6px;background:transparent;border:1px solid var(--line);}
   .editPanel{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);}
+  .jobNoteRow{padding:6px 0;border-bottom:1px solid var(--line);font-size:13px;}
+  .jobNoteRow:last-of-type{border-bottom:none;}
   .jrComment{font-size:11.5px;color:var(--dim);font-style:italic;margin-top:6px;}
   #jobsEmpty{font-family:var(--mono);font-size:12px;color:var(--dim);text-align:center;padding:20px 0;}
 
@@ -295,6 +302,7 @@
   <div style="display:flex;gap:8px;">
     <button id="viewToggle">🖥 Desktop</button>
     <button id="themeToggle">🌙 Dark</button>
+    <button id="itemRefListBtn">📋 Parts</button>
     <div class="userMenuWrap">
       <button id="userMenuBtn">👤</button>
       <div id="userMenuDropdown" class="userMenuDropdown">
@@ -328,6 +336,18 @@
       <button class="primary" id="addUserBtn" style="margin-top:10px;">+ Add user</button>
       <div id="userModalStatus" style="font-family:var(--mono);font-size:12px;margin-top:8px;"></div>
     </div>
+  </div>
+</div>
+
+<div id="itemRefListModalOverlay" class="modalOverlay">
+  <div class="modalCard" style="width:640px;">
+    <div class="modalHead">
+      <h2 class="cardHeader" style="margin:0;">PARTS REFERENCE</h2>
+      <button id="itemRefListCloseBtn" class="modalCloseBtn">✕</button>
+    </div>
+    <input type="text" id="itemRefSearch" placeholder="Search item #, AM #, grade…" style="margin-bottom:10px;">
+    <div id="itemRefListBody"></div>
+    <div id="itemRefListEmpty" style="display:none;font-family:var(--mono);font-size:12px;color:var(--dim);text-align:center;padding:10px 0;">No parts recorded yet.</div>
   </div>
 </div>
 
@@ -379,7 +399,8 @@
       <div class="card eqCard" style="padding:10px 12px;">
         <h2 class="cardHeader">JOB PACE / ETA</h2>
         <label>CURRENT JOB</label>
-        <select id="paceJobSelect"></select>
+        <div id="paceCurrentJobDisplay"></div>
+        <div id="paceNextJobDisplay"></div>
         <label>TONS/HOUR</label>
         <input type="number" id="paceTonsPerHour" step="any">
         <label>CORES LEFT ON THIS JOB (optional — corrects for downtime)</label>
@@ -454,15 +475,29 @@
       <button class="primary" id="saveAllBtn" style="display:none;">Save all to jobs table</button>
     </div>
 
-    <details>
-      <summary>Dipping memory</summary>
-      <div class="card" style="margin-top:8px;">
-        <div id="dipMemoryList"></div>
-        <div id="dipMemoryEmpty" style="display:none;font-family:var(--mono);font-size:12px;color:var(--dim);text-align:center;padding:10px 0;">Nothing remembered yet — tick Dipping on a job with an item number to start.</div>
-      </div>
-    </details>
   </div>
 
+</div>
+
+<div id="itemRefModalOverlay" class="modalOverlay">
+  <div class="modalCard" style="width:520px;">
+    <div class="modalHead">
+      <strong>Check before saving</strong>
+      <button id="itemRefModalCloseBtn" class="modalCloseBtn">✕</button>
+    </div>
+    <div id="itemRefModalList"></div>
+    <button class="primary" id="itemRefConfirmBtn" style="margin-top:10px;">Confirm &amp; Save</button>
+  </div>
+</div>
+
+<div id="jobNotesModalOverlay" class="modalOverlay">
+  <div class="modalCard" style="width:480px;">
+    <div class="modalHead">
+      <h2 class="cardHeader" id="jobNotesModalTitle" style="margin:0;">NOTES</h2>
+      <button id="jobNotesModalCloseBtn" class="modalCloseBtn">✕</button>
+    </div>
+    <div id="jobNotesModalBody"></div>
+  </div>
 </div>
 
 <script>
@@ -600,7 +635,8 @@ renderAdditionsResults();
 // current_job_id/started_at/tons_per_hour are null until Horatio (or auto-advance) sets them —
 // effectiveCurrentJobId() supplies the "first not-done job" default without writing anything.
 let pace = { current_job_id: null, started_at: null, tons_per_hour: null, remaining_qty: null };
-const paceJobSelect = document.getElementById('paceJobSelect');
+const paceCurrentJobDisplay = document.getElementById('paceCurrentJobDisplay');
+const paceNextJobDisplay = document.getElementById('paceNextJobDisplay');
 const paceTonsPerHour = document.getElementById('paceTonsPerHour');
 const paceRemainingQty = document.getElementById('paceRemainingQty');
 const paceCalcBtn = document.getElementById('paceCalcBtn');
@@ -662,9 +698,11 @@ function fmtEta(ms){
 
 function renderPaceCard(force){
   const curId = effectiveCurrentJobId();
-  const curJob = jobs.find(j => j.id === curId);
-  paceJobSelect.innerHTML = jobs.map(j => `<option value="${j.id}">${esc(j.am_number)}${j.grade ? ' — ' + esc(j.grade) : ''}</option>`).join('');
-  if(force || document.activeElement !== paceJobSelect) paceJobSelect.value = curId || '';
+  const curIdx = jobs.findIndex(j => j.id === curId);
+  const curJob = curIdx >= 0 ? jobs[curIdx] : null;
+  const nextJob = curIdx >= 0 ? jobs.slice(curIdx + 1).find(j => !j.is_done) : null;
+  paceCurrentJobDisplay.textContent = curJob ? `${curJob.am_number}${curJob.grade ? ' — ' + curJob.grade : ''}` : '—';
+  paceNextJobDisplay.textContent = nextJob ? `Next: ${nextJob.am_number}` : '';
   if(document.activeElement !== paceTonsPerHour) paceTonsPerHour.value = pace.tons_per_hour ?? '';
   if(force || document.activeElement !== paceRemainingQty) paceRemainingQty.value = pace.remaining_qty ?? '';
   paceRemainingQty.placeholder = curJob && curJob.planned_qty ? `leave blank = full job (${curJob.planned_qty})` : 'leave blank = full job';
@@ -698,7 +736,7 @@ async function performPaceSave(){
   const tph = parseFloat(paceTonsPerHour.value);
   const remaining = parseFloat(paceRemainingQty.value);
   pace = {
-    current_job_id: paceJobSelect.value || null,
+    current_job_id: pace.current_job_id,
     started_at: pace.started_at,
     tons_per_hour: Number.isFinite(tph) ? tph : null,
     remaining_qty: Number.isFinite(remaining) ? remaining : null
@@ -714,11 +752,6 @@ async function performPaceSave(){
   renderJobs();
 }
 
-// Switching the current job invalidates any remaining-core correction typed for the old one.
-paceJobSelect.addEventListener('change', ()=>{
-  paceRemainingQty.value = '';
-  queuePaceSave();
-});
 paceTonsPerHour.addEventListener('input', queuePaceSave);
 paceRemainingQty.addEventListener('input', queuePaceSave);
 
@@ -977,12 +1010,26 @@ const statusEl = document.getElementById('status');
 const reviewList = document.getElementById('reviewList');
 const saveAllBtn = document.getElementById('saveAllBtn');
 
-const dipMemoryList = document.getElementById('dipMemoryList');
-const dipMemoryEmpty = document.getElementById('dipMemoryEmpty');
+const itemRefModalOverlay = document.getElementById('itemRefModalOverlay');
+const itemRefModalList = document.getElementById('itemRefModalList');
+const itemRefModalCloseBtn = document.getElementById('itemRefModalCloseBtn');
+const itemRefConfirmBtn = document.getElementById('itemRefConfirmBtn');
+
+const itemRefListBtn = document.getElementById('itemRefListBtn');
+const itemRefListModalOverlay = document.getElementById('itemRefListModalOverlay');
+const itemRefListCloseBtn = document.getElementById('itemRefListCloseBtn');
+const itemRefListBody = document.getElementById('itemRefListBody');
+const itemRefListEmpty = document.getElementById('itemRefListEmpty');
+const itemRefSearch = document.getElementById('itemRefSearch');
+
+const jobNotesModalOverlay = document.getElementById('jobNotesModalOverlay');
+const jobNotesModalCloseBtn = document.getElementById('jobNotesModalCloseBtn');
+const jobNotesModalTitle = document.getElementById('jobNotesModalTitle');
+const jobNotesModalBody = document.getElementById('jobNotesModalBody');
 
 jobDatePicker.value = todayStr();
 jobDatePicker.addEventListener('change', ()=>{ loadJobs(); updatePushLiveButton(); loadChat(); loadPace(); });
-refreshBtn.addEventListener('click', ()=>{ loadJobs(); loadDipMemory(); loadPublishedDay(); loadPace(); });
+refreshBtn.addEventListener('click', ()=>{ loadJobs(); loadPublishedDay(); loadPace(); });
 
 let publishedDay = null;
 
@@ -1010,6 +1057,12 @@ pushLiveBtn.addEventListener('click', async ()=>{
 
 let extractedJobs = [];
 let jobs = [];
+let jobNotesByJob = {}; // job_id -> array of job_notes rows, newest first
+let jobNotesModalJobId = null;
+// Unsent "add a note" drafts, keyed by job id — a full renderJobs() (triggered by
+// something unrelated, e.g. toggling Edit on a different job) would otherwise wipe
+// whatever's typed here since the textarea has no other backing state.
+let jobNoteDrafts = {};
 let editingIds = new Set();
 let draggedId = null;
 let pendingReorderWrites = Promise.resolve();
@@ -1027,7 +1080,6 @@ async function checkSession(){
     manageUsersBtn.style.display = currentUser.is_owner ? 'block' : 'none';
     document.body.classList.toggle('view-only', currentUser.permission === 'view_only');
     loadJobs();
-    loadDipMemory();
     loadPublishedDay();
     startChatPolling();
     startAdditionsPolling();
@@ -1185,6 +1237,37 @@ function fieldsHtml(job, idAttr, idVal, opts){
       </div>`;
 }
 
+// Shared list-of-notes + add-note markup, reused verbatim by the inline edit-panel
+// notes section and the standalone jobNotesModalBody popup — see jobNotesByJob.
+// view_only users get the same read-only treatment here as everywhere else in this
+// file (cf. editToggleBtn) — the write handlers below already refuse the DB write,
+// but rendering live-looking controls that silently no-op on click is worse than
+// not showing them at all.
+function jobNotesSectionHtml(jobId){
+  const notes = jobNotesByJob[jobId] || [];
+  const canEdit = isFullAccess();
+  const notesHtml = notes.length ? notes.map(n => `
+      <div class="jobNoteRow" data-note-id="${n.id}">
+        <div>${esc(n.body)}</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:4px;">
+          <span style="font-family:var(--mono);font-size:10px;color:var(--dim);">${esc(new Date(n.created_at).toLocaleString())}</span>
+          ${canEdit ? `
+          <label class="jrDip"><input type="checkbox" class="jobNoteVisibleCb" data-note-id="${n.id}" data-job-id="${jobId}" ${n.visible_to_trolley ? 'checked' : ''}> Show on trolley sheet</label>
+          <button class="removeBtn jobNoteDeleteBtn" data-note-id="${n.id}" data-job-id="${jobId}" type="button">✕</button>`
+          : (n.visible_to_trolley ? `<span style="font-family:var(--mono);font-size:10px;color:var(--dim);">On trolley sheet</span>` : '')}
+        </div>
+      </div>`).join('') : `<div style="font-family:var(--mono);font-size:11px;color:var(--dim);">No notes yet.</div>`;
+
+  return `
+    <div class="jobNotesSection" data-job-id="${jobId}" style="margin-top:10px;">
+      <label>NOTES</label>
+      ${notesHtml}
+      ${canEdit ? `
+      <textarea class="jobNoteNewBody" rows="2" placeholder="Add a note…" style="margin-top:8px;">${esc(jobNoteDrafts[jobId] || '')}</textarea>
+      <button class="jobNoteAddBtn" data-job-id="${jobId}" type="button" style="width:auto;margin-top:6px;padding:6px 12px;font-size:12px;">+ Add note</button>` : ''}
+    </div>`;
+}
+
 function renderReview(){
   reviewList.innerHTML = '';
   extractedJobs.forEach((job, i)=>{
@@ -1213,8 +1296,74 @@ function renderReview(){
   saveAllBtn.style.display = extractedJobs.length ? 'block' : 'none';
 }
 
+function weightDiffers(a, b){
+  const x = (a === null || a === undefined || a === '') ? null : parseFloat(a);
+  const y = (b === null || b === undefined || b === '') ? null : parseFloat(b);
+  if(x == null && y == null) return false;
+  if(x == null || y == null) return true;
+  return Math.abs(x - y) > 0.001;
+}
+
+// Prefer a candidate that also matches this AM number + grade (i.e. this exact
+// variant has been seen before); otherwise fall back to whichever candidate for
+// this item number was updated most recently. isExactMatch matters for the
+// item_reference sync after save — only an exact-match baseline gets updated
+// in place; a fallback match is a genuinely different historical variant and
+// must not be overwritten with today's values.
+function pickReferenceBaseline(candidates, row){
+  const exact = candidates.find(c => (c.am_number || '') === (row.am_number || '') && (c.grade || '') === (row.grade || ''));
+  if(exact) return { baseline: exact, isExactMatch: true };
+  const fallback = [...candidates].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0];
+  return { baseline: fallback, isExactMatch: false };
+}
+
+// Resolves with one choice per discrepancy ('database'/'new'/'newEntry', "new"
+// pre-selected), or null if the modal was closed without confirming.
+function openItemRefModal(discrepancies){
+  return new Promise(resolve=>{
+    const resolutions = discrepancies.map(()=>'new');
+    itemRefModalList.innerHTML = discrepancies.map((d, i)=>`
+      <div class="jobCard">
+        <div class="rowTop"><span class="idx">ITEM ${esc(d.item_number)}${d.grade ? ' — ' + esc(d.grade) : ''}</span></div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--dim);margin-bottom:4px;">AM ${esc(d.am_number)}</div>
+        <div style="font-family:var(--mono);font-size:12px;margin:6px 0;">
+          ${d.diffs.map(f => `<div>${esc(f.label)}: <span style="color:var(--dim);">${esc(f.stored)}</span> → <span style="color:var(--amber);">${esc(f.value)}</span></div>`).join('')}
+        </div>
+        <div class="filterChips" style="margin-top:6px;">
+          <button type="button" class="chip refChoice" data-idx="${i}" data-choice="database">Keep database</button>
+          <button type="button" class="chip refChoice active" data-idx="${i}" data-choice="new">Keep new</button>
+          <button type="button" class="chip refChoice" data-idx="${i}" data-choice="newEntry">Save as new entry</button>
+        </div>
+      </div>
+    `).join('');
+
+    function onChipClick(e){
+      const btn = e.target.closest('.refChoice');
+      if(!btn) return;
+      const i = parseInt(btn.dataset.idx);
+      resolutions[i] = btn.dataset.choice;
+      itemRefModalList.querySelectorAll(`.refChoice[data-idx="${i}"]`).forEach(b => b.classList.toggle('active', b === btn));
+    }
+    function finish(result){
+      itemRefModalOverlay.classList.remove('open');
+      itemRefModalList.removeEventListener('click', onChipClick);
+      itemRefConfirmBtn.removeEventListener('click', onConfirm);
+      itemRefModalCloseBtn.removeEventListener('click', onCancel);
+      resolve(result);
+    }
+    function onConfirm(){ finish(resolutions); }
+    function onCancel(){ finish(null); }
+
+    itemRefModalList.addEventListener('click', onChipClick);
+    itemRefConfirmBtn.addEventListener('click', onConfirm);
+    itemRefModalCloseBtn.addEventListener('click', onCancel);
+    itemRefModalOverlay.classList.add('open');
+  });
+}
+
 saveAllBtn.addEventListener('click', async ()=>{
   if(!isFullAccess() || !extractedJobs.length) return;
+  saveAllBtn.disabled = true;
   setStatus('Saving…', '');
   const jobDate = jobDatePicker.value || todayStr();
 
@@ -1242,45 +1391,132 @@ saveAllBtn.addEventListener('click', async ()=>{
 
   const missingCount = extractedJobs.length - rows.length;
 
-  // Postgres rejects an upsert if two rows in the same batch target the same
-  // conflict key — keep the last occurrence when the same AM number/date
-  // shows up twice (e.g. OCR misread a job number the same way on two rows).
+  // Postgres upsert rejects a batch where two rows target the same primary
+  // key — keep the last occurrence when the same AM number/item/date shows
+  // up twice (e.g. OCR misread a job number the same way on two rows). Two
+  // different item numbers under the same AM number are separate jobs now,
+  // not a collision — see item_reference below.
   const dedupedByKey = new Map();
-  rows.forEach(r => dedupedByKey.set(`${r.am_number}|${r.job_date}`, r));
+  rows.forEach(r => dedupedByKey.set(`${r.am_number}|${r.item_number}|${r.job_date}`, r));
   const dedupedRows = [...dedupedByKey.values()];
   const dupCount = rows.length - dedupedRows.length;
 
   if(missingCount || dupCount){
     const msgs = [];
     if(missingCount) msgs.push(`${missingCount} row(s) skipped — AM number is required to save`);
-    if(dupCount) msgs.push(`${dupCount} duplicate row(s) skipped — same AM number/date appeared twice`);
+    if(dupCount) msgs.push(`${dupCount} duplicate row(s) skipped — same AM number/item/date appeared twice`);
     setStatus(msgs.join('; '), 'err');
+  }
+
+  // ---------- Crosscheck against item_reference ----------
+  // Identity is the part (item_number), not the work order — the same part
+  // legitimately gets a new am_number every run, so am_number/grade never
+  // gate a popup by themselves. weight/doubles/dipping are expected to stay
+  // constant per part; a mismatch there does.
+  const refItemNumbers = [...new Set(dedupedRows.map(r => r.item_number).filter(Boolean))];
+  let refByItem = {};
+  let refCheckFailed = false;
+  if(refItemNumbers.length){
+    const { data: refRows, error: refError } = await supa.from('item_reference').select('*').in('item_number', refItemNumbers);
+    if(refError){ console.error('item_reference lookup failed:', refError); refCheckFailed = true; }
+    (refRows || []).forEach(r => { (refByItem[r.item_number] ||= []).push(r); });
+  }
+
+  const discrepancies = [];
+  dedupedRows.forEach(row => {
+    if(!row.item_number) return;
+    const candidates = refByItem[row.item_number];
+    if(!candidates || !candidates.length) return;
+    const { baseline, isExactMatch } = pickReferenceBaseline(candidates, row);
+    const diffs = [];
+    if(weightDiffers(row.weight_kg, baseline.weight_kg)) diffs.push({ field: 'weight_kg', label: 'Weight (kg)', stored: baseline.weight_kg ?? '—', value: row.weight_kg ?? '—' });
+    if(!!row.is_doubles !== !!baseline.is_doubles) diffs.push({ field: 'is_doubles', label: 'Doubles/Singles', stored: baseline.is_doubles ? 'Doubles' : 'Singles', value: row.is_doubles ? 'Doubles' : 'Singles' });
+    if(!!row.needs_dipping !== !!baseline.needs_dipping) diffs.push({ field: 'needs_dipping', label: 'Dipping', stored: baseline.needs_dipping ? 'Yes' : 'No', value: row.needs_dipping ? 'Yes' : 'No' });
+    if(diffs.length) discrepancies.push({ row, baseline, isExactMatch, diffs, am_number: row.am_number, item_number: row.item_number, grade: row.grade });
+  });
+
+  if(discrepancies.length){
+    const resolutions = await openItemRefModal(discrepancies);
+    if(!resolutions){ setStatus('Save cancelled', ''); saveAllBtn.disabled = false; return; }
+    discrepancies.forEach((d, i) => {
+      d.resolution = resolutions[i];
+      if(resolutions[i] === 'database'){
+        d.row.weight_kg = d.baseline.weight_kg;
+        d.row.is_doubles = !!d.baseline.is_doubles;
+        d.row.needs_dipping = !!d.baseline.needs_dipping;
+        d.row.grade = d.baseline.grade;
+      }
+    });
   }
 
   // sort_order's DB default (whole-second epoch) can tie across every row in one scan
   // batch, so the list order after save falls back to whatever order Postgres feels
   // like returning ties in — not scan order. Assign explicit, strictly-increasing
   // sort_order values ourselves for genuinely new jobs (preserving scan order), and
-  // carry forward the existing value for jobs already on this date so re-scanning
-  // a job never moves it in the list.
-  const { data: existingForDate } = await supa.from('jobs')
-    .select('am_number, sort_order')
+  // carry forward the existing id/sort_order for jobs already on this date so
+  // re-scanning a job never moves it in the list or duplicates it. "Save as new
+  // entry" always counts as new, even if an AM number + item number match exists.
+  const { data: existingForDate, error: existingError } = await supa.from('jobs')
+    .select('id, am_number, item_number, sort_order')
     .eq('job_date', jobDate)
     .in('am_number', dedupedRows.map(r => r.am_number));
-  const existingSortOrderByAm = Object.fromEntries((existingForDate || []).map(j => [j.am_number, j.sort_order]));
+  if(existingError){ setStatus('Save failed: ' + existingError.message, 'err'); saveAllBtn.disabled = false; return; }
+  const existingByKey = Object.fromEntries((existingForDate || []).map(j => [`${j.am_number}|${j.item_number || ''}`, j]));
+  const forcedNewRows = new Set(discrepancies.filter(d => d.resolution === 'newEntry').map(d => d.row));
   let nextNewSortOrder = Date.now() / 1000;
   dedupedRows.forEach(r => {
-    r.sort_order = r.am_number in existingSortOrderByAm ? existingSortOrderByAm[r.am_number] : nextNewSortOrder++;
+    const existing = forcedNewRows.has(r) ? null : existingByKey[`${r.am_number}|${r.item_number || ''}`];
+    if(existing){ r.id = existing.id; r.sort_order = existing.sort_order; }
+    else { r.id = crypto.randomUUID(); r.sort_order = nextNewSortOrder++; }
   });
 
-  const { data: savedRows, error } = await supa.from('jobs').upsert(dedupedRows, { onConflict: 'am_number,job_date' }).select('id, am_number, job_date');
-  if(error){ setStatus('Save failed: ' + error.message, 'err'); return; }
+  const { data: savedRows, error } = await supa.from('jobs').upsert(dedupedRows).select('id, am_number, item_number, job_date');
+  if(error){ setStatus('Save failed: ' + error.message, 'err'); saveAllBtn.disabled = false; return; }
+
+  // ---------- item_reference sync ----------
+  // Only write when there's something new to record: a never-seen item number
+  // (insert), or a resolved discrepancy. "Keep database" already made the row
+  // equal to disc.baseline above, so there's nothing left to write for it. An
+  // exact-match baseline (same AM number + grade) gets corrected in place on
+  // "Keep new"; a fallback-matched baseline is a genuinely different historical
+  // variant, so "Keep new" there — like "Save as new entry" — inserts instead
+  // of overwriting a different variant's recorded values.
+  const refWrites = [];
+  dedupedRows.forEach(row => {
+    if(!row.item_number) return;
+    const candidates = refByItem[row.item_number] || [];
+    if(!candidates.length){
+      refWrites.push(supa.from('item_reference').insert({
+        am_number: row.am_number, item_number: row.item_number, grade: row.grade,
+        weight_kg: row.weight_kg, is_doubles: row.is_doubles, needs_dipping: row.needs_dipping
+      }));
+      return;
+    }
+    const disc = discrepancies.find(d => d.row === row);
+    if(!disc) return;
+    if(disc.resolution === 'new' && disc.isExactMatch){
+      refWrites.push(supa.from('item_reference').update({
+        weight_kg: row.weight_kg, is_doubles: row.is_doubles, needs_dipping: row.needs_dipping, updated_at: new Date().toISOString()
+      }).eq('id', disc.baseline.id));
+    } else if(disc.resolution === 'new' || disc.resolution === 'newEntry'){
+      refWrites.push(supa.from('item_reference').insert({
+        am_number: row.am_number, item_number: row.item_number, grade: row.grade,
+        weight_kg: row.weight_kg, is_doubles: row.is_doubles, needs_dipping: row.needs_dipping
+      }));
+    }
+  });
+  if(refWrites.length){
+    const refResults = await Promise.all(refWrites);
+    const refFailures = refResults.filter(r => r && r.error);
+    if(refFailures.length) console.error('item_reference sync had errors:', refFailures.map(r => r.error));
+  }
 
   const synced = await syncCountsFromPreviousDay(savedRows || []);
-  setStatus(dedupedRows.length + ' job(s) saved' + (synced ? ` — ${synced} count(s) carried over from a previous day` : ''), 'ok');
+  setStatus(dedupedRows.length + ' job(s) saved' + (synced ? ` — ${synced} count(s) carried over from a previous day` : '') + (refCheckFailed ? ' (crosscheck unavailable — see console)' : ''), 'ok');
   extractedJobs = [];
   reviewList.innerHTML = '';
   saveAllBtn.style.display = 'none';
+  saveAllBtn.disabled = false;
   loadJobs();
 });
 
@@ -1299,23 +1535,29 @@ async function syncCountsFromPreviousDay(savedRows){
   if(!targets.length) return 0;
 
   const { data: priorJobs } = await supa.from('jobs')
-    .select('id, am_number, job_date')
+    .select('id, am_number, item_number, job_date')
     .in('am_number', targets.map(r => r.am_number))
     .lt('job_date', jobDate)
     .order('job_date', { ascending: false });
   if(!priorJobs || !priorJobs.length) return 0;
 
-  const mostRecentPriorIdByAm = {};
-  priorJobs.forEach(j => { if(!(j.am_number in mostRecentPriorIdByAm)) mostRecentPriorIdByAm[j.am_number] = j.id; });
+  // Keyed by am_number+item_number, not am_number alone — the same am_number
+  // can now legitimately cover more than one part on a given day (see
+  // item_reference / "save as new entry" in saveAllBtn above).
+  const mostRecentPriorIdByKey = {};
+  priorJobs.forEach(j => {
+    const key = `${j.am_number}|${j.item_number || ''}`;
+    if(!(key in mostRecentPriorIdByKey)) mostRecentPriorIdByKey[key] = j.id;
+  });
 
-  const priorIds = Object.values(mostRecentPriorIdByAm);
+  const priorIds = Object.values(mostRecentPriorIdByKey);
   const { data: priorCounts } = await supa.from('counts')
     .select('job_id, group_a_cores, group_a_trolleys, group_b_cores, group_b_trolleys, manual_total_override, comment, still_making')
     .in('job_id', priorIds);
   const priorCountByJobId = Object.fromEntries((priorCounts || []).map(c => [c.job_id, c]));
 
   const newRows = targets.map(r => {
-    const priorId = mostRecentPriorIdByAm[r.am_number];
+    const priorId = mostRecentPriorIdByKey[`${r.am_number}|${r.item_number || ''}`];
     const prior = priorId && priorCountByJobId[priorId];
     if(!prior) return null;
     return {
@@ -1343,8 +1585,20 @@ async function loadJobs(){
   if(error){ jobList.innerHTML = '<div style="color:var(--red);font-family:var(--mono);font-size:12px;">Error: '+esc(error.message)+'</div>'; return; }
   jobs = data || [];
   editingIds = new Set([...editingIds].filter(id => jobs.some(j => j.id === id)));
+  await loadJobNotes();
   renderJobs();
   updateStatsBar();
+}
+
+async function loadJobNotes(){
+  jobNotesByJob = {};
+  if(!jobs.length) return;
+  const { data, error } = await supa.from('job_notes').select('*').in('job_id', jobs.map(j => j.id)).order('created_at', { ascending: false });
+  if(error){ console.error('Failed to load job notes:', error.message); return; }
+  (data || []).forEach(n=>{
+    if(!jobNotesByJob[n.job_id]) jobNotesByJob[n.job_id] = [];
+    jobNotesByJob[n.job_id].push(n);
+  });
 }
 
 // planned_qty is always raw cores, same unit as counted_total — doubles'
@@ -1422,6 +1676,7 @@ function renderJobsMobile(){
             <span class="jrGrade">${esc(j.grade) || '—'}</span>
             ${j.is_trial ? '<span class="badge badge-trial">TRIAL</span>' : ''}
             ${j.still_making ? '<span class="badge badge-warn">MAKING</span>' : ''}
+            ${(jobNotesByJob[j.id] || []).length ? `<button class="badge jobNotesBtn" data-id="${j.id}" type="button" title="View notes">📝</button>` : ''}
           </div>
           <div class="jrStats">
             <span class="jrCount ${short ? 'jrShort' : 'jrOk'}">${counted}/${planned ?? '—'}</span>
@@ -1435,6 +1690,7 @@ function renderJobsMobile(){
         ${editing ? `
         <div class="editPanel">
           ${fieldsHtml(j, 'data-id', j.id, { trialIdPrefix: 'editTrial', doublesIdPrefix: 'editDoubles' })}
+          ${jobNotesSectionHtml(j.id)}
           ${j.comment ? `<div class="jrComment">"${esc(j.comment)}"</div>` : ''}
           <div class="manageSaveState" data-savestate="${j.id}"></div>
           <button class="danger deleteJobBtn" data-id="${j.id}" style="margin-top:10px;">Delete job</button>
@@ -1484,7 +1740,7 @@ function renderJobsDesktop(){
         <td class="roText">${esc(j.grade) || '—'}</td>
         <td class="roText">${esc(j.item_number) || '—'}</td>
         <td class="roText">${esc(j.status) || '—'}</td>
-        <td>${j.is_trial ? '<span class="badge badge-trial">TRIAL</span>' : ''} ${j.still_making ? '<span class="badge badge-warn">MAKING</span>' : ''}</td>
+        <td>${j.is_trial ? '<span class="badge badge-trial">TRIAL</span>' : ''} ${j.still_making ? '<span class="badge badge-warn">MAKING</span>' : ''} ${(jobNotesByJob[j.id] || []).length ? `<button class="badge jobNotesBtn" data-id="${j.id}" type="button" title="View notes">📝</button>` : ''}</td>
         <td class="roText">${j.weight_kg ?? '—'}</td>
         <td class="roText">${planned ?? '—'}</td>
         <td>
@@ -1503,6 +1759,7 @@ function renderJobsDesktop(){
       <tr class="editDrawerRow" data-id="${j.id}">
         <td colspan="16"><div class="editPanel">
           ${fieldsHtml(j, 'data-id', j.id, { wide: true, trialIdPrefix: 'dTrial', doublesIdPrefix: 'dDoubles' })}
+          ${jobNotesSectionHtml(j.id)}
           ${j.comment ? `<div class="jrComment">"${esc(j.comment)}"</div>` : ''}
           <div class="manageSaveState" data-savestate="${j.id}"></div>
           <button class="danger deleteJobBtn" data-id="${j.id}" style="margin-top:10px;width:auto;">Delete job</button>
@@ -1521,8 +1778,10 @@ function renderJobsDesktop(){
 
 // Delegated listeners — bound once, never re-bound on render.
 jobList.addEventListener('input', (e)=>{
+  const draftArea = e.target.closest('.jobNoteNewBody');
+  if(draftArea){ jobNoteDrafts[draftArea.closest('.jobNotesSection').dataset.jobId] = draftArea.value; return; }
   if(!isFullAccess()) return;
-  const inp = e.target.closest('input[data-f]');
+  const inp = e.target.closest('input[data-f], textarea[data-f]');
   if(!inp || inp.type === 'checkbox') return;
   const job = jobs.find(j => j.id === inp.dataset.id);
   if(!job) return;
@@ -1588,6 +1847,96 @@ async function handleDippingToggle(cb){
   if(job) job.needs_dipping = cb.checked;
   updateStatsBar();
 }
+
+// ---------- Job notes (job_notes table — timestamped list per job) ----------
+// Read access (opening the popup, seeing the list) is available to every logged-in user,
+// same as job_notes' RLS select grant to `authenticated`; only the writes below are gated.
+function openJobNotesModal(jobId){
+  jobNotesModalJobId = jobId;
+  const job = jobs.find(j => j.id === jobId);
+  jobNotesModalTitle.textContent = job ? `NOTES — ${job.am_number}` : 'NOTES';
+  jobNotesModalBody.innerHTML = jobNotesSectionHtml(jobId);
+  jobNotesModalOverlay.classList.add('open');
+}
+jobNotesModalCloseBtn.addEventListener('click', ()=>{ jobNotesModalOverlay.classList.remove('open'); jobNotesModalJobId = null; });
+jobNotesModalOverlay.addEventListener('click', (e)=>{ if(e.target === jobNotesModalOverlay){ jobNotesModalOverlay.classList.remove('open'); jobNotesModalJobId = null; } });
+
+// Re-fetches job_notes for all loaded jobs and patches just this job's notes UI back
+// into place — deliberately NOT a full renderJobs() on the common path, so an in-progress
+// draft in another row's notes textarea (or another field entirely) isn't wiped by, say,
+// ticking a visibility checkbox on this one. Only falls back to a full render when the
+// 📝 icon itself needs to appear/disappear (notes count crossing 0 <-> 1+), since that
+// icon lives inside the row's own template and isn't a standalone patchable element.
+async function refreshJobNotes(jobId){
+  const hadNotes = (jobNotesByJob[jobId] || []).length > 0;
+  await loadJobNotes();
+  const hasNotes = (jobNotesByJob[jobId] || []).length > 0;
+
+  if(hadNotes !== hasNotes){
+    renderJobs();
+  } else {
+    jobList.querySelectorAll(`.jobNotesSection[data-job-id="${jobId}"]`).forEach(el => {
+      el.outerHTML = jobNotesSectionHtml(jobId);
+    });
+  }
+  if(jobNotesModalOverlay.classList.contains('open') && jobNotesModalJobId === jobId){
+    jobNotesModalBody.innerHTML = jobNotesSectionHtml(jobId);
+  }
+}
+
+async function addJobNote(btn){
+  if(!isFullAccess()) return;
+  const textarea = btn.closest('.jobNotesSection').querySelector('.jobNoteNewBody');
+  const body = textarea.value.trim();
+  if(!body) return;
+  const { error } = await supa.from('job_notes').insert({ job_id: btn.dataset.jobId, body });
+  if(error){ alert('Failed to add note: ' + error.message); return; }
+  delete jobNoteDrafts[btn.dataset.jobId];
+  await refreshJobNotes(btn.dataset.jobId);
+}
+
+async function deleteJobNote(btn){
+  if(!isFullAccess()) return;
+  if(!confirm(`Delete this note? This can't be undone.`)) return;
+  const { error } = await supa.from('job_notes').delete().eq('id', btn.dataset.noteId);
+  if(error){ alert('Failed to delete note: ' + error.message); return; }
+  await refreshJobNotes(btn.dataset.jobId);
+}
+
+async function toggleJobNoteVisible(cb){
+  if(!isFullAccess()){ cb.checked = !cb.checked; return; }
+  const { error } = await supa.from('job_notes').update({ visible_to_trolley: cb.checked }).eq('id', cb.dataset.noteId);
+  if(error){ alert('Failed to update: ' + error.message); cb.checked = !cb.checked; return; }
+  await refreshJobNotes(cb.dataset.jobId);
+}
+
+jobList.addEventListener('click', (e)=>{
+  const notesBtn = e.target.closest('.jobNotesBtn');
+  if(notesBtn){ openJobNotesModal(notesBtn.dataset.id); return; }
+  const addBtn = e.target.closest('.jobNoteAddBtn');
+  if(addBtn){ addJobNote(addBtn); return; }
+  const delBtn = e.target.closest('.jobNoteDeleteBtn');
+  if(delBtn) deleteJobNote(delBtn);
+});
+jobList.addEventListener('change', (e)=>{
+  const cb = e.target.closest('.jobNoteVisibleCb');
+  if(cb) toggleJobNoteVisible(cb);
+});
+
+jobNotesModalBody.addEventListener('click', (e)=>{
+  const addBtn = e.target.closest('.jobNoteAddBtn');
+  if(addBtn){ addJobNote(addBtn); return; }
+  const delBtn = e.target.closest('.jobNoteDeleteBtn');
+  if(delBtn) deleteJobNote(delBtn);
+});
+jobNotesModalBody.addEventListener('change', (e)=>{
+  const cb = e.target.closest('.jobNoteVisibleCb');
+  if(cb) toggleJobNoteVisible(cb);
+});
+jobNotesModalBody.addEventListener('input', (e)=>{
+  const draftArea = e.target.closest('.jobNoteNewBody');
+  if(draftArea) jobNoteDrafts[draftArea.closest('.jobNotesSection').dataset.jobId] = draftArea.value;
+});
 
 // Offline-safe save: failed saves persist in localStorage and auto-retry on
 // reconnect, same pattern as trolley.html's performSave/retryPendingSaves —
@@ -1778,33 +2127,215 @@ function renumberAndPersist(){
   ));
 }
 
-// ---------- Dipping memory ----------
-async function loadDipMemory(){
-  const { data, error } = await supa.from('dip_items').select('*').order('item_number');
-  if(error){ dipMemoryList.innerHTML = '<div style="color:var(--red);font-family:var(--mono);font-size:12px;">Error: '+esc(error.message)+'</div>'; return; }
-  const items = data || [];
-  if(!items.length){
-    dipMemoryList.innerHTML = '';
-    dipMemoryEmpty.style.display = 'block';
-    return;
-  }
-  dipMemoryEmpty.style.display = 'none';
-  dipMemoryList.innerHTML = items.map(d => `
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12.5px;">
-      <span>${esc(d.item_number)}</span>
-      <button class="removeBtn dipMemoryDeleteBtn" data-item="${esc(d.item_number)}">✕</button>
-    </div>
-  `).join('');
+// ---------- Parts reference list (browse/search/edit item_reference) ----------
+// Locked list by default — each row shows a plain read-only line, an Edit button
+// on the right unlocks that row's fields, matching the same pattern the day's job
+// list already uses (editToggleBtn/editingIds there, itemRefEditIds here).
+let itemRefRows = [];
+let itemRefSearchTerm = '';
+let itemRefEditIds = new Set();
+let itemRefNotesByRef = {};
+// Same reasoning as jobNoteDrafts above — a full renderItemRefList() (edit-toggle on
+// another row, or typing in search) would otherwise wipe an unsent draft.
+let itemRefNoteDrafts = {};
+
+async function loadItemRefList(){
+  const { data, error } = await supa.from('item_reference').select('*').order('item_number');
+  if(error){ itemRefListBody.innerHTML = '<div style="color:var(--red);font-family:var(--mono);font-size:12px;">Error: '+esc(error.message)+'</div>'; return; }
+  itemRefRows = data || [];
+  itemRefEditIds = new Set([...itemRefEditIds].filter(id => itemRefRows.some(r => r.id === id)));
+  await loadItemRefNotes();
+  renderItemRefList();
 }
 
-dipMemoryList.addEventListener('click', async (e)=>{
+async function loadItemRefNotes(){
+  if(!itemRefRows.length){ itemRefNotesByRef = {}; return; }
+  const { data, error } = await supa.from('item_reference_notes').select('*')
+    .in('item_reference_id', itemRefRows.map(r => r.id)).order('created_at', { ascending: false });
+  if(error){ console.error('item_reference_notes lookup failed:', error); itemRefNotesByRef = {}; return; }
+  itemRefNotesByRef = {};
+  (data || []).forEach(n => { (itemRefNotesByRef[n.item_reference_id] ||= []).push(n); });
+}
+
+// Mirrors jobNotesSectionHtml's shape (list + timestamp + trolley-visibility checkbox +
+// add-note bar), but against item_reference_notes/item_reference_id instead of
+// job_notes/job_id — kept as its own function rather than a shared parameterized one,
+// since the two write against different tables with different FK columns.
+function itemRefNotesSectionHtml(refId){
+  const notes = itemRefNotesByRef[refId] || [];
+  const canEdit = isFullAccess();
+  const notesHtml = notes.length ? notes.map(n => `
+      <div class="jobNoteRow" data-note-id="${n.id}">
+        <div>${esc(n.body)}</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:4px;">
+          <span style="font-family:var(--mono);font-size:10px;color:var(--dim);">${esc(new Date(n.created_at).toLocaleString())}</span>
+          ${canEdit ? `
+          <label class="jrDip"><input type="checkbox" class="itemRefNoteVisibleCb" data-note-id="${n.id}" data-ref-id="${refId}" ${n.visible_to_trolley ? 'checked' : ''}> Show on trolley sheet</label>
+          <button class="removeBtn itemRefNoteDeleteBtn" data-note-id="${n.id}" data-ref-id="${refId}" type="button">✕</button>`
+          : (n.visible_to_trolley ? `<span style="font-family:var(--mono);font-size:10px;color:var(--dim);">On trolley sheet</span>` : '')}
+        </div>
+      </div>`).join('') : `<div style="font-family:var(--mono);font-size:11px;color:var(--dim);">No notes yet.</div>`;
+
+  return `
+    <div class="itemRefNotesSection" data-ref-id="${refId}" style="margin-top:10px;">
+      <label>NOTES</label>
+      ${notesHtml}
+      ${canEdit ? `
+      <textarea class="itemRefNoteNewBody" rows="2" placeholder="Add a note…" style="margin-top:8px;">${esc(itemRefNoteDrafts[refId] || '')}</textarea>
+      <button class="itemRefNoteAddBtn" data-ref-id="${refId}" type="button" style="width:auto;margin-top:6px;padding:6px 12px;font-size:12px;">+ Add note</button>` : ''}
+    </div>`;
+}
+
+async function addItemRefNote(btn){
   if(!isFullAccess()) return;
-  const btn = e.target.closest('.dipMemoryDeleteBtn');
-  if(!btn) return;
-  const { error } = await supa.from('dip_items').delete().eq('item_number', btn.dataset.item);
-  if(error){ alert('Failed to remove: ' + error.message); return; }
-  loadDipMemory();
+  const textarea = btn.closest('.itemRefNotesSection').querySelector('.itemRefNoteNewBody');
+  const body = textarea.value.trim();
+  if(!body) return;
+  const refId = btn.dataset.refId;
+  const row = itemRefRows.find(r => r.id === refId);
+  if(!row) return;
+  const { error } = await supa.from('item_reference_notes').insert({ item_reference_id: refId, item_number: row.item_number, body });
+  if(error){ alert('Failed to add note: ' + error.message); return; }
+  delete itemRefNoteDrafts[refId];
+  await refreshItemRefNotes(refId);
+}
+
+async function deleteItemRefNote(btn){
+  if(!isFullAccess()) return;
+  if(!confirm(`Delete this note? This can't be undone.`)) return;
+  const { error } = await supa.from('item_reference_notes').delete().eq('id', btn.dataset.noteId);
+  if(error){ alert('Failed to delete note: ' + error.message); return; }
+  await refreshItemRefNotes(btn.dataset.refId);
+}
+
+async function toggleItemRefNoteVisible(cb){
+  if(!isFullAccess()){ cb.checked = !cb.checked; return; }
+  const { error } = await supa.from('item_reference_notes').update({ visible_to_trolley: cb.checked }).eq('id', cb.dataset.noteId);
+  if(error){ alert('Failed to update: ' + error.message); cb.checked = !cb.checked; return; }
+  await refreshItemRefNotes(cb.dataset.refId);
+}
+
+// Targeted patch, not a full renderItemRefList() — same reasoning as refreshJobNotes()
+// above: avoids nuking another row's in-progress edit/draft over an unrelated note action.
+async function refreshItemRefNotes(refId){
+  await loadItemRefNotes();
+  itemRefListBody.querySelectorAll(`.itemRefNotesSection[data-ref-id="${refId}"]`).forEach(el => {
+    el.outerHTML = itemRefNotesSectionHtml(refId);
+  });
+}
+
+function renderItemRefList(){
+  const term = itemRefSearchTerm.toLowerCase();
+  const visible = term
+    ? itemRefRows.filter(r => [r.item_number, r.am_number, r.grade].filter(Boolean).join(' ').toLowerCase().includes(term))
+    : itemRefRows;
+
+  itemRefListEmpty.style.display = visible.length ? 'none' : 'block';
+  itemRefListBody.innerHTML = visible.map(r => {
+    const editing = itemRefEditIds.has(r.id);
+    return `
+    <div class="jobCard">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="flex:1;min-width:0;font-family:var(--mono);font-size:12.5px;display:flex;gap:14px;flex-wrap:wrap;">
+          <span><b>${esc(r.item_number)}</b></span>
+          <span style="color:var(--dim);">AM ${esc(r.am_number) || '—'}</span>
+          <span style="color:var(--dim);">${esc(r.grade) || '—'}</span>
+          <span style="color:var(--dim);">${r.weight_kg ?? '—'} kg</span>
+          <span style="color:var(--dim);">${r.is_doubles ? 'Doubles' : 'Singles'}</span>
+          ${r.needs_dipping ? '<span style="color:var(--dim);">Dip</span>' : ''}
+        </div>
+        ${isFullAccess() ? `<button class="editToggleBtn itemRefEditToggleBtn" data-id="${r.id}" style="width:auto;padding:4px 10px;">${editing ? 'Done' : 'Edit'}</button>` : ''}
+      </div>
+      ${editing ? `
+      <div class="fieldRow" style="margin-top:10px;">
+        <div><label>ITEM #</label><input data-id="${r.id}" data-f="item_number" value="${esc(r.item_number)}"></div>
+        <div><label>AM #</label><input data-id="${r.id}" data-f="am_number" value="${esc(r.am_number)}"></div>
+      </div>
+      <div class="fieldRow">
+        <div><label>GRADE</label><input data-id="${r.id}" data-f="grade" value="${esc(r.grade)}"></div>
+        <div><label>WEIGHT (KG)</label><input type="number" step="any" data-id="${r.id}" data-f="weight_kg" value="${esc(r.weight_kg)}"></div>
+      </div>
+      <div class="checkboxRow">
+        <input type="checkbox" data-id="${r.id}" data-f="is_doubles" id="refDoubles${r.id}" ${r.is_doubles ? 'checked' : ''}>
+        <label for="refDoubles${r.id}" style="font-size:12px;">Doubles</label>
+      </div>
+      <div class="checkboxRow">
+        <input type="checkbox" data-id="${r.id}" data-f="needs_dipping" id="refDip${r.id}" ${r.needs_dipping ? 'checked' : ''}>
+        <label for="refDip${r.id}" style="font-size:12px;">Dipping</label>
+      </div>
+      ${itemRefNotesSectionHtml(r.id)}
+      <button class="removeBtn itemRefDeleteBtn" data-id="${r.id}" style="margin-top:6px;width:auto;">✕ Delete</button>
+      ` : ''}
+    </div>
+  `;
+  }).join('');
+}
+
+itemRefSearch.addEventListener('input', ()=>{
+  itemRefSearchTerm = itemRefSearch.value.trim();
+  renderItemRefList();
 });
+
+itemRefListBody.addEventListener('input', (e)=>{
+  const draftArea = e.target.closest('.itemRefNoteNewBody');
+  if(draftArea) itemRefNoteDrafts[draftArea.closest('.itemRefNotesSection').dataset.refId] = draftArea.value;
+});
+
+itemRefListBody.addEventListener('change', async (e)=>{
+  if(!isFullAccess()) return;
+  const noteCb = e.target.closest('.itemRefNoteVisibleCb');
+  if(noteCb){ toggleItemRefNoteVisible(noteCb); return; }
+  const el = e.target.closest('[data-f]');
+  if(!el) return;
+  const row = itemRefRows.find(r => r.id === el.dataset.id);
+  if(!row) return;
+  const field = el.dataset.f;
+  const value = el.type === 'checkbox' ? el.checked : (field === 'weight_kg' ? (el.value === '' ? null : parseFloat(el.value)) : (el.value || null));
+  row[field] = value;
+  const { error } = await supa.from('item_reference').update({ [field]: value, updated_at: new Date().toISOString() }).eq('id', row.id);
+  if(error){ alert('Failed to save: ' + error.message); return; }
+  // item_reference_notes.item_number is a denormalized snapshot (keeps trolley.html's
+  // anon read RLS-simple, no join into item_reference) — keep it in sync so correcting
+  // an item number here doesn't orphan that part's existing notes.
+  if(field === 'item_number'){
+    const { error: syncError } = await supa.from('item_reference_notes').update({ item_number: value }).eq('item_reference_id', row.id);
+    if(syncError) console.error('item_reference_notes item_number sync failed:', syncError);
+  }
+});
+
+itemRefListBody.addEventListener('click', async (e)=>{
+  if(!isFullAccess()) return;
+  const editBtn = e.target.closest('.itemRefEditToggleBtn');
+  if(editBtn){
+    const id = editBtn.dataset.id;
+    if(itemRefEditIds.has(id)) itemRefEditIds.delete(id); else itemRefEditIds.add(id);
+    renderItemRefList();
+    return;
+  }
+  const addNoteBtn = e.target.closest('.itemRefNoteAddBtn');
+  if(addNoteBtn){ addItemRefNote(addNoteBtn); return; }
+  const delNoteBtn = e.target.closest('.itemRefNoteDeleteBtn');
+  if(delNoteBtn){ deleteItemRefNote(delNoteBtn); return; }
+  const btn = e.target.closest('.itemRefDeleteBtn');
+  if(!btn) return;
+  const row = itemRefRows.find(r => r.id === btn.dataset.id);
+  if(!confirm(`Delete reference record for item ${row ? row.item_number : ''}? This can't be undone.`)) return;
+  const { error } = await supa.from('item_reference').delete().eq('id', btn.dataset.id);
+  if(error){ alert('Failed to delete: ' + error.message); return; }
+  itemRefRows = itemRefRows.filter(r => r.id !== btn.dataset.id);
+  itemRefEditIds.delete(btn.dataset.id);
+  renderItemRefList();
+});
+
+itemRefListBtn.addEventListener('click', ()=>{
+  itemRefSearch.value = '';
+  itemRefSearchTerm = '';
+  itemRefEditIds = new Set();
+  itemRefListModalOverlay.classList.add('open');
+  loadItemRefList();
+});
+itemRefListCloseBtn.addEventListener('click', ()=> itemRefListModalOverlay.classList.remove('open'));
+itemRefListModalOverlay.addEventListener('click', (e)=>{ if(e.target === itemRefListModalOverlay) itemRefListModalOverlay.classList.remove('open'); });
 
 function esc(v){
   if(v === null || v === undefined) return '';

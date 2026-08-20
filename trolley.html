@@ -40,6 +40,7 @@
   .badge{display:inline-block;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.03em;padding:2px 6px;border-radius:5px;white-space:nowrap;}
   .badge-warn{background:rgba(217,67,46,.15);color:var(--red);}
   .badge-making{background:rgba(255,138,30,.15);color:var(--amber);}
+  .badge-note{background:var(--elev);color:var(--text);border:1px solid var(--line);cursor:pointer;}
 
   .editToggleBtn{
     width:auto;padding:6px 12px;border-radius:8px;border:1px solid var(--line);
@@ -140,6 +141,25 @@
     background:var(--elev);color:var(--text);font-size:12px;font-family:var(--sans);
   }
   #chatSendBtn{width:auto;padding:7px 12px;border-radius:7px;border:1px solid var(--line);background:var(--elev);color:var(--text);font-size:12px;font-weight:600;}
+
+  #notesOverlay{
+    position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.5);
+    display:none;align-items:center;justify-content:center;padding:16px;
+  }
+  #notesOverlay.open{display:flex;}
+  #notesCard{
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    width:100%;max-width:340px;max-height:70vh;display:flex;flex-direction:column;overflow:hidden;
+  }
+  .notesHead{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:10px 12px;border-bottom:1px solid var(--line);
+    font-family:var(--sans);font-size:13px;font-weight:700;color:var(--text);
+  }
+  #notesCloseBtn{width:auto;padding:3px 9px;border-radius:6px;border:1px solid var(--line);background:var(--elev);color:var(--text);font-size:13px;}
+  #notesBody{overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px;}
+  .noteEntry{background:var(--sunken);border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:12px;color:var(--text);line-height:1.4;}
+  .noteEntry .noteTime{font-family:var(--mono);font-size:9px;color:var(--dim);margin-bottom:3px;}
 </style>
 </head>
 <body>
@@ -162,6 +182,16 @@
   <div class="chatInputRow">
     <input type="text" id="chatInput" placeholder="Message the office…">
     <button id="chatSendBtn">Send</button>
+  </div>
+</div>
+
+<div id="notesOverlay">
+  <div id="notesCard">
+    <div class="notesHead">
+      <span id="notesTitle">Notes from office</span>
+      <button id="notesCloseBtn">✕</button>
+    </div>
+    <div id="notesBody"></div>
   </div>
 </div>
 
@@ -194,6 +224,7 @@ themeToggle.addEventListener('click', ()=>{
 });
 
 let jobs = [];
+let jobNotes = {}; // job_id -> [{body, created_at}] — office notes visible to trolley, refetched each loadJobs()
 let editingIds = new Set();
 const saveTimers = {}; // debounce per job
 let currentDay = null;
@@ -225,6 +256,7 @@ async function loadJobs(){
     manual_total_override: null // recomputed fresh each load; only set client-side when boys type a direct total
   }));
   editingIds = new Set([...editingIds].filter(id => jobs.some(j => j.job_id === id)));
+  await loadJobNotes();
   render();
 }
 
@@ -247,6 +279,7 @@ function render(){
           <span class="mhInline">Mingzhi ${esc(j.mingzhi_hansberg_no)}</span>
           ${j.needs_dipping ? '<span class="badge badge-warn">DIP</span>' : ''}
           ${j.still_making ? '<span class="badge badge-making">MAKING</span>' : ''}
+          ${(jobNotes[j.job_id] || []).length ? `<button class="badge badge-note" data-job="${j.job_id}">📝</button>` : ''}
         </div>
         <div class="jrRight">
           <span class="jrTotal" data-job="${j.job_id}">${computeTotal(j)}</span>
@@ -470,6 +503,61 @@ function esc(v){
   if(v === null || v === undefined) return '';
   return String(v).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
 }
+
+// ---------- Notes from office (read-only) ----------
+const notesOverlay = document.getElementById('notesOverlay');
+const notesTitle = document.getElementById('notesTitle');
+const notesBody = document.getElementById('notesBody');
+const notesCloseBtn = document.getElementById('notesCloseBtn');
+
+// Merges two sources into the same per-job list: job_notes (about this specific day's
+// job) and item_reference_notes (a standing note about the PART itself, matched by
+// item_number — trolley_jobs now exposes it — and fanned out to every one of today's
+// jobs that shares that item_number, not just one).
+async function loadJobNotes(){
+  jobNotes = {};
+  if(!jobs.length) return;
+
+  const { data: jn } = await supa.from('job_notes').select('*')
+    .eq('visible_to_trolley', true).in('job_id', jobs.map(j => j.job_id));
+  for(const n of (jn || [])){
+    (jobNotes[n.job_id] = jobNotes[n.job_id] || []).push({ body: n.body, created_at: n.created_at });
+  }
+
+  const itemNumbers = [...new Set(jobs.map(j => j.item_number).filter(Boolean))];
+  if(itemNumbers.length){
+    const { data: irn } = await supa.from('item_reference_notes').select('*')
+      .eq('visible_to_trolley', true).in('item_number', itemNumbers);
+    for(const n of (irn || [])){
+      for(const j of jobs.filter(j => j.item_number === n.item_number)){
+        (jobNotes[j.job_id] = jobNotes[j.job_id] || []).push({ body: n.body, created_at: n.created_at });
+      }
+    }
+  }
+
+  for(const jobId in jobNotes) jobNotes[jobId].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+}
+
+function openNotesPopup(jobId){
+  const job = jobs.find(j => j.job_id === jobId);
+  const notes = jobNotes[jobId] || [];
+  notesTitle.textContent = 'Notes from office' + (job ? ' — ' + job.am_number : '');
+  notesBody.innerHTML = notes.map(n => `
+    <div class="noteEntry">
+      <div class="noteTime">${esc(new Date(n.created_at).toLocaleString())}</div>
+      ${esc(n.body)}
+    </div>
+  `).join('');
+  notesOverlay.classList.add('open');
+}
+function closeNotesPopup(){ notesOverlay.classList.remove('open'); }
+
+notesCloseBtn.addEventListener('click', closeNotesPopup);
+notesOverlay.addEventListener('click', (e)=>{ if(e.target === notesOverlay) closeNotesPopup(); });
+listEl.addEventListener('click', (e)=>{
+  const noteBtn = e.target.closest('.badge-note');
+  if(noteBtn) openNotesPopup(noteBtn.dataset.job);
+});
 
 // ---------- Chat ----------
 const chatToggleBtn = document.getElementById('chatToggleBtn');

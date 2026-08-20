@@ -35,10 +35,20 @@ create table if not exists jobs (
   created_at timestamptz default now()
 );
 
--- Uniqueness is (am_number, job_date), not am_number alone — the same
--- job number can legitimately reappear on a different programme day.
+-- (am_number, job_date) is deliberately NOT unique — jobs.id is the only
+-- real identity. The same am_number can legitimately reappear on a
+-- different programme day, and (since item_reference below) can even
+-- repeat on the SAME day when it's a genuinely different part that just
+-- happens to share a work-order number — main.html's save flow decides
+-- edit-vs-insert itself by looking up (am_number, item_number) among
+-- today's jobs, not by relying on a DB constraint. This index is kept
+-- purely for that lookup's performance.
 drop index if exists jobs_am_number_idx;
-create unique index if not exists jobs_am_number_date_idx on jobs (am_number, job_date);
+-- CREATE INDEX IF NOT EXISTS only checks the name — it won't replace an
+-- existing UNIQUE index of the same name with this non-unique one, so the
+-- old unique constraint must be dropped explicitly first.
+drop index if exists jobs_am_number_date_idx;
+create index if not exists jobs_am_number_date_idx on jobs (am_number, job_date);
 
 -- ---------- Counts table (trolley boys write here, no login) ----------
 create table if not exists counts (
@@ -80,6 +90,63 @@ create table if not exists dip_items (
   updated_at timestamptz default now()
 );
 
+-- ---------- Item reference (master record, by part number) ----------
+-- Crosscheck baseline for main.html's save flow. Identity is the PART
+-- (item_number), not the work order — am_number is recorded but not part
+-- of the match, since the same part legitimately gets a new am_number
+-- every run. Multiple rows can share an item_number on purpose: each
+-- distinct (am_number, grade, weight, doubles, dipping) combo ever
+-- confirmed is its own row, including via "save as new entry" in the
+-- crosscheck popup.
+create table if not exists item_reference (
+  id uuid primary key default gen_random_uuid(),
+  am_number text,
+  item_number text not null,
+  grade text,
+  weight_kg numeric,
+  is_doubles boolean not null default false,
+  needs_dipping boolean not null default false,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create index if not exists item_reference_item_number_idx
+  on item_reference (item_number);
+
+-- ---------- Item reference notes (Horatio-facing, timestamped, per part) ----------
+-- Same idea as job_notes, but for a PART (item_reference row) rather than a specific
+-- day's job. item_number is denormalized (snapshotted at insert time) alongside the
+-- FK so trolley.html's anon read policy needs no cross-table join. Not day-scoped —
+-- a visible note follows the part wherever its item_number shows up today.
+create table if not exists item_reference_notes (
+  id uuid primary key default gen_random_uuid(),
+  item_reference_id uuid not null references item_reference(id) on delete cascade,
+  item_number text not null,
+  body text not null,
+  visible_to_trolley boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists item_reference_notes_ref_idx on item_reference_notes (item_reference_id);
+create index if not exists item_reference_notes_item_number_idx on item_reference_notes (item_number);
+
+-- Backfill from every job ever saved. DISTINCT (not "latest only") so a
+-- genuinely different historical variant keeps its own row. Guarded with
+-- NOT EXISTS so re-running this file never re-inserts duplicates.
+insert into item_reference (am_number, item_number, grade, weight_kg, is_doubles, needs_dipping)
+select distinct j.am_number, j.item_number, j.grade, j.weight_kg, coalesce(j.is_doubles, false), coalesce(j.needs_dipping, false)
+from jobs j
+where j.item_number is not null and j.item_number <> ''
+  and not exists (
+    select 1 from item_reference r
+    where r.item_number = j.item_number
+      and r.am_number is not distinct from j.am_number
+      and r.grade is not distinct from j.grade
+      and r.weight_kg is not distinct from j.weight_kg
+      and r.is_doubles = coalesce(j.is_doubles, false)
+      and r.needs_dipping = coalesce(j.needs_dipping, false)
+  );
+
 -- ---------- Chat between Horatio and the trolley boys ----------
 -- One thread per job_date, mirroring how trolley_jobs/counts already
 -- scope anon access to whatever day is currently published.
@@ -93,6 +160,20 @@ create table if not exists chat_messages (
 );
 
 create index if not exists chat_messages_job_date_idx on chat_messages (job_date, created_at);
+
+-- ---------- Job notes (Horatio-facing, timestamped, per job) ----------
+-- Append-only log, not a single mutable field — each entry can be flagged
+-- visible_to_trolley to also surface (read-only) on trolley.html, scoped
+-- to the published day same as counts/chat_messages.
+create table if not exists job_notes (
+  id uuid primary key default gen_random_uuid(),
+  job_id uuid not null references jobs(id) on delete cascade,
+  body text not null,
+  visible_to_trolley boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists job_notes_job_id_idx on job_notes (job_id);
 
 -- ---------- Additions bubble (Cr/Cu/Mo/Sn/Ni/Gr/Ti dosing) ----------
 -- Synced across Horatio's devices instead of per-browser localStorage.
@@ -161,6 +242,7 @@ create view trolley_jobs as
 select
   j.id as job_id,
   j.am_number,
+  j.item_number,
   j.planned_qty,
   j.mingzhi_hansberg_no,
   j.job_date,
@@ -232,11 +314,17 @@ alter table jobs enable row level security;
 alter table counts enable row level security;
 alter table dip_items enable row level security;
 alter table published_day enable row level security;
+alter table item_reference enable row level security;
+alter table job_notes enable row level security;
+alter table item_reference_notes enable row level security;
 
 revoke all on jobs from anon, authenticated;
 revoke all on counts from anon, authenticated;
 revoke all on dip_items from anon, authenticated;
 revoke all on published_day from anon, authenticated;
+revoke all on item_reference from anon, authenticated;
+revoke all on job_notes from anon, authenticated;
+revoke all on item_reference_notes from anon, authenticated;
 
 -- jobs: any authenticated login can read (view_only sees everything), only
 -- full_access (per app_users) can write. See "User permissions" section below.
@@ -351,6 +439,25 @@ create policy "full access can delete dip_items"
 
 grant select, insert, update, delete on dip_items to authenticated;
 
+-- item_reference: same read/write split as jobs/dip_items
+drop policy if exists "authenticated can read item_reference" on item_reference;
+create policy "authenticated can read item_reference"
+  on item_reference for select to authenticated using (auth.role() = 'authenticated');
+
+drop policy if exists "full access can insert item_reference" on item_reference;
+create policy "full access can insert item_reference"
+  on item_reference for insert to authenticated with check (is_full_access());
+
+drop policy if exists "full access can update item_reference" on item_reference;
+create policy "full access can update item_reference"
+  on item_reference for update to authenticated using (is_full_access()) with check (is_full_access());
+
+drop policy if exists "full access can delete item_reference" on item_reference;
+create policy "full access can delete item_reference"
+  on item_reference for delete to authenticated using (is_full_access());
+
+grant select, insert, update, delete on item_reference to authenticated;
+
 -- published_day: anyone can read which day is live, only you can change it
 drop policy if exists "anyone can read published_day" on published_day;
 create policy "anyone can read published_day"
@@ -402,6 +509,68 @@ create policy "anon can send published-day chat"
   );
 
 grant select, insert on chat_messages to anon, authenticated;
+
+-- job_notes: same read/write split as jobs for Horatio; anon gets read-only,
+-- only entries explicitly marked visible_to_trolley, only for the currently
+-- published day — same trust boundary as counts/chat_messages.
+drop policy if exists "authenticated can read job_notes" on job_notes;
+create policy "authenticated can read job_notes"
+  on job_notes for select to authenticated using (auth.role() = 'authenticated');
+
+drop policy if exists "full access can insert job_notes" on job_notes;
+create policy "full access can insert job_notes"
+  on job_notes for insert to authenticated with check (is_full_access());
+
+drop policy if exists "full access can update job_notes" on job_notes;
+create policy "full access can update job_notes"
+  on job_notes for update to authenticated using (is_full_access()) with check (is_full_access());
+
+drop policy if exists "full access can delete job_notes" on job_notes;
+create policy "full access can delete job_notes"
+  on job_notes for delete to authenticated using (is_full_access());
+
+grant select, insert, update, delete on job_notes to authenticated;
+
+drop policy if exists "anon can read trolley-visible notes for published-day jobs" on job_notes;
+create policy "anon can read trolley-visible notes for published-day jobs"
+  on job_notes for select
+  to anon
+  using (
+    visible_to_trolley = true
+    and exists (
+      select 1 from jobs j, published_day p
+      where j.id = job_notes.job_id and p.id = 1 and j.job_date = p.job_date
+    )
+  );
+
+grant select on job_notes to anon;
+
+-- item_reference_notes: same split as job_notes; anon read is NOT day-scoped (a part
+-- isn't tied to one job_date the way a job_notes row is) and needs no join since
+-- item_number is denormalized on the row itself.
+drop policy if exists "authenticated can read item_reference_notes" on item_reference_notes;
+create policy "authenticated can read item_reference_notes"
+  on item_reference_notes for select to authenticated using (auth.role() = 'authenticated');
+
+drop policy if exists "full access can insert item_reference_notes" on item_reference_notes;
+create policy "full access can insert item_reference_notes"
+  on item_reference_notes for insert to authenticated with check (is_full_access());
+
+drop policy if exists "full access can update item_reference_notes" on item_reference_notes;
+create policy "full access can update item_reference_notes"
+  on item_reference_notes for update to authenticated using (is_full_access()) with check (is_full_access());
+
+drop policy if exists "full access can delete item_reference_notes" on item_reference_notes;
+create policy "full access can delete item_reference_notes"
+  on item_reference_notes for delete to authenticated using (is_full_access());
+
+grant select, insert, update, delete on item_reference_notes to authenticated;
+
+drop policy if exists "anon can read trolley-visible item reference notes" on item_reference_notes;
+create policy "anon can read trolley-visible item reference notes"
+  on item_reference_notes for select to anon using (visible_to_trolley = true);
+
+grant select on item_reference_notes to anon;
 
 -- additions: your logged-in account only — DELIBERATELY not gated by
 -- is_full_access(), same trust level as job_pace: view_only users can use this too.
