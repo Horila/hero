@@ -54,13 +54,13 @@
 
   /* ---- Top bar ---- */
   .topBar{
-    position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;
-    gap:6px 14px;padding:10px 16px;background:rgba(6,11,22,.85);backdrop-filter:blur(10px);
+    position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-start;
+    gap:6px 16px;padding:8px 16px;background:rgba(6,11,22,.85);backdrop-filter:blur(10px);
     border-bottom:1px solid var(--line);
   }
   body.light .topBar{background:rgba(245,241,232,.85);}
   .topBar .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:14px;letter-spacing:-.01em;order:1;}
-  .topBar .topBarActions{display:flex;gap:8px;order:2;}
+  .topBar .topBarActions{display:flex;gap:8px;order:4;margin-left:auto;}
   .topBar .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--amber);box-shadow:0 0 8px var(--amber);flex-shrink:0;}
   .topBar .brand .dot.casting{background:var(--green);box-shadow:0 0 8px var(--green);}
   .topBar .brand .brandText{display:flex;flex-direction:column;line-height:1.2;}
@@ -69,11 +69,11 @@
 
   /* ---- Day picker + Live toggle + today's totals, folded into the top bar ---- */
   .topBarStats{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;font-family:var(--mono);font-size:11.5px;
-    flex-basis:100%;order:3;}
+    order:2;}
 
   /* ---- Cast strip: what's on the floor right now, folded into the top bar ---- */
   .castBar{display:none;flex-wrap:wrap;align-items:center;gap:4px 14px;font-family:var(--mono);font-size:11.5px;
-    flex-basis:100%;order:4;}
+    order:3;}
   .castBar.active{display:flex;}
   .topBar .castField{display:flex;align-items:baseline;gap:5px;white-space:nowrap;}
   .topBar .castField .lbl{color:var(--dim);font-size:9.5px;letter-spacing:.03em;text-transform:uppercase;}
@@ -1711,6 +1711,7 @@ async function loadJobs(){
   const { data, error } = await supa.from('job_summary').select('*').eq('job_date', jobDate).order('sort_order', { ascending: true });
   if(error){ jobList.innerHTML = '<div style="color:var(--red);font-family:var(--mono);font-size:12px;">Error: '+esc(error.message)+'</div>'; return; }
   jobs = data || [];
+  jobs.sort((a, b) => (a.is_done ? 1 : 0) - (b.is_done ? 1 : 0)); // done jobs sink to the bottom, stable otherwise
   editingIds = new Set([...editingIds].filter(id => jobs.some(j => j.id === id)));
   await loadNotesForItemNumbers(jobs.map(j => j.item_number));
   renderJobs();
@@ -1964,6 +1965,8 @@ jobList.addEventListener('change', async (e)=>{
       const { error } = await supa.rpc('set_job_done', { p_job_id: job.id, p_done: cb.checked });
       if(error){ alert('Failed to update: ' + error.message); job.is_done = !cb.checked; cb.checked = !cb.checked; return; }
       if(wasCurrentPaceJob) advancePace(job.id);
+      jobs.sort((a, b) => (a.is_done ? 1 : 0) - (b.is_done ? 1 : 0));
+      renderJobs();
       return;
     }
     if(!isFullAccess()) return;
