@@ -59,6 +59,7 @@ Deno.serve(async (req: Request) => {
     if (action === "create") {
       const { email, password, name, permission } = body;
       if (!email || !password || !name) return json({ error: "email, password, and name are required" }, 400);
+      if (password.length < 8) return json({ error: "password must be at least 8 characters" }, 400);
       if (permission !== "view_only" && permission !== "full_access") return json({ error: "invalid permission" }, 400);
 
       const { data: created, error: createErr } = await admin.auth.admin.createUser({
@@ -70,7 +71,10 @@ Deno.serve(async (req: Request) => {
         user_id: created.user.id, email, name, permission,
       });
       if (insertErr) {
-        await admin.auth.admin.deleteUser(created.user.id); // roll back the auth user, don't leave an orphan login
+        const { error: rollbackErr } = await admin.auth.admin.deleteUser(created.user.id); // roll back the auth user, don't leave an orphan login
+        if (rollbackErr) {
+          return json({ error: `${insertErr.message} (rollback also failed: ${rollbackErr.message} — orphaned auth user ${created.user.id})` }, 500);
+        }
         return json({ error: insertErr.message }, 500);
       }
       return json({ ok: true });

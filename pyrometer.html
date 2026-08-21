@@ -250,6 +250,7 @@
   let liveIdx = null; // most recent redness index sample
   let calPoints = loadCal();
   let fit = null; // {a, b, r2}
+  let rafId = null;
 
   // ---------- Camera setup ----------
   async function initCamera(){
@@ -260,12 +261,36 @@
       });
       video.srcObject = stream;
       track = stream.getVideoTracks()[0];
+      track.addEventListener('ended', onCameraLost);
       await video.play();
-      requestAnimationFrame(sampleLoop);
+      rafId = requestAnimationFrame(sampleLoop);
     }catch(e){
       statusLine.innerHTML = '<span class="bad">Camera access failed: ' + (e.message||e) + '</span>';
     }
   }
+
+  // ---------- Camera lifecycle: stop when backgrounded, resume when foregrounded ----------
+  function stopCamera(){
+    if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
+    if(track){ track.removeEventListener('ended', onCameraLost); track.stop(); track = null; }
+    if(video.srcObject){
+      video.srcObject.getTracks().forEach(t=>t.stop());
+      video.srcObject = null;
+    }
+  }
+
+  function onCameraLost(){
+    stopCamera();
+    tempNum.textContent = '—';
+    tempNum.style.color = 'var(--text-dim)';
+    statusLine.innerHTML = '<span class="bad">Camera access failed: camera disconnected</span>';
+  }
+
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.hidden){ stopCamera(); }
+    else { initCamera(); }
+  });
+  window.addEventListener('pagehide', stopCamera);
 
   // ---------- Manual exposure/WB attempt ----------
   async function tryLockExposure(){
@@ -303,6 +328,7 @@
 
   // ---------- Sampling ----------
   function sampleLoop(){
+    if(track && track.readyState !== 'live'){ onCameraLost(); return; }
     if(!frozen && video.videoWidth){
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
@@ -329,7 +355,14 @@
 
       updateReadout(idx);
     }
-    requestAnimationFrame(sampleLoop);
+    rafId = requestAnimationFrame(sampleLoop);
+  }
+
+  // ---------- Shared fit-quality thresholds (used by updateReadout + renderFitQuality) ----------
+  function fitQualityTier(r2){
+    if(r2 > 0.9) return 'good';
+    if(r2 > 0.6) return 'fair';
+    return 'poor';
   }
 
   function updateReadout(idx){
@@ -338,7 +371,8 @@
       tempNum.textContent = Math.round(est).toLocaleString();
       const glow = tempToColor(est);
       tempNum.style.color = glow;
-      const qualityWord = fit.r2 > 0.9 ? '<span class="good">good</span>' : (fit.r2 > 0.6 ? 'fair' : '<span class="bad">poor</span>');
+      const tier = fitQualityTier(fit.r2);
+      const qualityWord = tier === 'good' ? '<span class="good">good</span>' : (tier === 'fair' ? 'fair' : '<span class="bad">poor</span>');
       statusLine.innerHTML = fit.n + ' cal points · fit R² ' + fit.r2.toFixed(2) + ' (' + qualityWord + ')';
     } else {
       tempNum.textContent = '—';
@@ -387,9 +421,10 @@
       fitQualityEl.textContent = calPoints.length + ' point(s) saved — need at least 2 for a fit.';
       return;
     }
-    fitQualityEl.className = 'fitQuality ' + (fit.r2 > 0.75 ? 'ok' : 'bad');
+    const tier = fitQualityTier(fit.r2);
+    fitQualityEl.className = 'fitQuality ' + (tier === 'poor' ? 'bad' : 'ok');
     fitQualityEl.textContent = 'Linear fit: T = ' + fit.a.toFixed(0) + ' × idx + ' + fit.b.toFixed(0) +
-      '   |   R² = ' + fit.r2.toFixed(3) + (fit.r2 < 0.75 ? '  — weak fit, add more/better-spread points' : '  — solid fit');
+      '   |   R² = ' + fit.r2.toFixed(3) + (tier === 'poor' ? '  — weak fit, add more/better-spread points' : '  — solid fit');
   }
 
   function renderCalList(){

@@ -101,6 +101,7 @@
   .saveState{font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right;margin-top:4px;height:12px;}
   .saveState.saving{color:var(--amber);}
   .saveState.saved{color:var(--green);}
+  .saveState.offline{color:var(--red);}
 
   #empty{color:var(--dim);font-family:var(--mono);font-size:13px;text-align:center;padding:40px 0;}
 
@@ -283,7 +284,12 @@ async function loadJobs(){
   }
   const day = pub ? pub.job_date : new Date().toISOString().slice(0,10); // falls back to real today if not migrated yet
   currentDay = day;
-  const { data: paceData } = await supa.from('job_pace').select('*').eq('job_date', day).maybeSingle();
+  const { data: paceData, error: paceError } = await supa.from('job_pace').select('*').eq('job_date', day).maybeSingle();
+  if(paceError && !pubError){
+    dayWarningEl.style.display = 'block';
+    dayWarningEl.style.color = 'var(--red)';
+    dayWarningEl.textContent = "Couldn't load pace data (" + paceError.message + ') — ETAs will be hidden until this clears.';
+  }
   pace = paceData ? { current_job_id: paceData.current_job_id, started_at: paceData.started_at, tons_per_hour: paceData.tons_per_hour, remaining_qty: paceData.remaining_qty } : { current_job_id: null, started_at: null, tons_per_hour: null, remaining_qty: null };
   const { data, error } = await supa.from('trolley_jobs').select('*').eq('job_date', day).order('sort_order', { ascending: true });
   if(error){
@@ -298,7 +304,10 @@ async function loadJobs(){
     group_b_trolleys: j.group_b_trolleys || 0,
     comment: j.comment || '',
     still_making: !!j.still_making,
-    manual_total_override: null // recomputed fresh each load; only set client-side when boys type a direct total
+    // trolley_jobs exposes total_cores = coalesce(manual_total_override, computed product)
+    // (schema.sql) but never the raw override column, so reconstruct it here: if the
+    // server's total doesn't match the computed product, the difference IS the override.
+    manual_total_override: j.total_cores === ((j.group_a_cores || 0) * (j.group_a_trolleys || 0) + (j.group_b_cores || 0) * (j.group_b_trolleys || 0)) ? null : j.total_cores
   }));
   editingIds = new Set([...editingIds].filter(id => jobs.some(j => j.job_id === id)));
   await loadJobNotes();
@@ -481,9 +490,21 @@ function queueSave(jobId){
   saveTimers[jobId] = setTimeout(()=> performSave(jobId), 500);
 }
 
+// Per-job lock: performSave and retryPendingSaves both funnel every upsert
+// through here, so overlapping saves for the same job can never race — each
+// waits for the previous one to fully settle before its own request goes out.
+const jobLocks = {};
+function withJobLock(jobId, fn){
+  const next = (jobLocks[jobId] || Promise.resolve()).then(fn, fn);
+  jobLocks[jobId] = next.catch(()=>{});
+  return next;
+}
+
 async function upsertCount(jobId, payload){
-  const { error } = await supa.from('counts').upsert(payload, { onConflict: 'job_id' });
-  return { ok: !error, error };
+  return withJobLock(jobId, async () => {
+    const { error } = await supa.from('counts').upsert(payload, { onConflict: 'job_id' });
+    return { ok: !error, error };
+  });
 }
 
 // Single shared timer chain for offline retries: both the initial failure
@@ -520,8 +541,7 @@ async function performSave(jobId){
     setPendingEntry(jobId, payload);
     if(stateEl){
       stateEl.textContent = 'offline — will retry: ' + error.message;
-      stateEl.className = 'saveState';
-      stateEl.style.color = 'var(--red)';
+      stateEl.className = 'saveState offline';
     }
     scheduleRetry();
   } else {
@@ -535,11 +555,16 @@ async function retryPendingSaves(){
   const jobIds = Object.keys(pending);
   if(!jobIds.length) return;
   for(const jobId of jobIds){
-    const { ok } = await upsertCount(jobId, pending[jobId]);
+    const { ok, error } = await upsertCount(jobId, pending[jobId]);
     const stateEl = document.querySelector(`[data-savestate="${jobId}"]`);
     if(ok){
       clearPendingEntry(jobId);
       if(stateEl){ stateEl.textContent = 'saved'; stateEl.className = 'saveState saved'; }
+    } else if(error && error.code === '23503'){
+      // FK violation: the job was deleted server-side, so this save can never
+      // succeed — stop retrying it forever instead of clearing.
+      console.warn('Dropping pending save for deleted job', jobId, error.message);
+      clearPendingEntry(jobId);
     }
   }
   if(Object.keys(getPending()).length) scheduleRetry();

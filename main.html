@@ -603,17 +603,44 @@ function queueAdditionSave(el){
   additionSaveTimers[el] = setTimeout(()=> performAdditionSave(el), 500);
 }
 
+// Offline-safe save: same pattern as performSave/PENDING_KEY further down, just keyed
+// by element (additions are upserted by element name, not a job id).
+const ADDITIONS_PENDING_KEY = 'coreCountingPendingAdditions';
+function getPendingAdditions(){ try{ return JSON.parse(localStorage.getItem(ADDITIONS_PENDING_KEY) || '{}'); }catch(e){ return {}; } }
+function setPendingAddition(el, patch){ const p = getPendingAdditions(); p[el] = patch; localStorage.setItem(ADDITIONS_PENDING_KEY, JSON.stringify(p)); }
+function clearPendingAddition(el){ const p = getPendingAdditions(); delete p[el]; localStorage.setItem(ADDITIONS_PENDING_KEY, JSON.stringify(p)); }
+
 async function performAdditionSave(el){
   const row = additionsEdit.querySelector(`.additionRow[data-el="${el}"]`);
   const perTonne = parseFloat(row.querySelector('.addPerTonne').value);
   const perLaddle = parseFloat(row.querySelector('.addPerLaddle').value);
-  await supa.from('additions').upsert({
+  const patch = {
     element: el,
     per_tonne: Number.isFinite(perTonne) ? perTonne : null,
     per_laddle: Number.isFinite(perLaddle) ? perLaddle : null,
     updated_at: new Date().toISOString()
-  }, { onConflict: 'element' });
+  };
+  const { error } = await supa.from('additions').upsert(patch, { onConflict: 'element' });
+  if(error){
+    setPendingAddition(el, patch);
+    setStatus(`Failed to save ${el} addition — offline, will retry: ` + error.message, 'err');
+    setTimeout(()=> retryPendingAdditions(), 15000);
+  } else {
+    clearPendingAddition(el);
+  }
 }
+
+async function retryPendingAdditions(){
+  const pending = getPendingAdditions();
+  const els = Object.keys(pending);
+  if(!els.length) return;
+  for(const el of els){
+    const { error } = await supa.from('additions').upsert(pending[el], { onConflict: 'element' });
+    if(!error) clearPendingAddition(el);
+  }
+  if(Object.keys(getPendingAdditions()).length) setTimeout(()=> retryPendingAdditions(), 15000);
+}
+window.addEventListener('online', retryPendingAdditions);
 
 let additionsPollTimer = null;
 function startAdditionsPolling(){
@@ -1421,6 +1448,14 @@ async function refreshNotes(itemNumber){
   const hasNotes = (notesByItemNumber[itemNumber] || []).length > 0;
 
   if(hadNotes !== hasNotes) renderJobs();
+  else {
+    // renderJobs() (above) already re-runs renderCastBar via renderPaceCard, but when the
+    // note count doesn't cross the 0/1 boundary that full render is skipped — yet
+    // renderCastBar's #castNotes also reads notesByItemNumber for the currently-casting job,
+    // so it needs its own refresh here too.
+    const curJob = jobs.find(j => j.id === effectiveCurrentJobId());
+    if(curJob && curJob.item_number === itemNumber) renderPaceCard();
+  }
 
   document.querySelectorAll('.notesSection').forEach(el => {
     if(el.dataset.itemNumber === itemNumber) el.outerHTML = notesSectionHtml(itemNumber, { hideAddBtn: el.dataset.hideAddBtn === '1' });
@@ -1600,10 +1635,10 @@ saveAllBtn.addEventListener('click', async ()=>{
     discrepancies.forEach((d, i) => {
       d.resolution = resolutions[i];
       if(resolutions[i] === 'database'){
-        d.row.weight_kg = d.baseline.weight_kg;
-        d.row.is_doubles = !!d.baseline.is_doubles;
-        d.row.needs_dipping = !!d.baseline.needs_dipping;
-        d.row.grade = d.baseline.grade;
+        // Only overwrite fields actually shown/diffed in the modal — needs_dipping and
+        // grade are never in d.diffs (see comment above), so "Keep database" must not
+        // silently touch them.
+        d.diffs.forEach(diff => { d.row[diff.field] = d.baseline[diff.field]; });
       }
     });
   }
@@ -1629,7 +1664,10 @@ saveAllBtn.addEventListener('click', async ()=>{
   // variant, so "Keep new" there — like "Save as new entry" — inserts instead
   // of overwriting a different variant's recorded values.
   const refWrites = [];
-  dedupedRows.forEach(row => {
+  // If the crosscheck lookup itself failed, refByItem is empty for every item_number —
+  // indistinguishable from "genuinely never seen before". Skip the sync entirely rather
+  // than insert bogus duplicate item_reference rows for parts that already have one.
+  if(!refCheckFailed) dedupedRows.forEach(row => {
     if(!row.item_number) return;
     const candidates = refByItem[row.item_number] || [];
     if(!candidates.length){

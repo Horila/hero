@@ -234,6 +234,8 @@ select
   j.am_number,
   j.item_number,
   j.planned_qty,
+  j.weight_kg,
+  j.is_doubles,
   j.mingzhi_hansberg_no,
   j.job_date,
   j.needs_dipping,
@@ -513,7 +515,7 @@ create policy "anon can mark admin chat read"
     and job_date = (select job_date from published_day where id = 1)
   );
 
-grant update on chat_messages to anon;
+grant update (read_at, read_by) on chat_messages to anon;
 
 -- item_reference_notes: same read/write split as jobs for Horatio (authenticated
 -- read, full_access-gated writes); anon read is scoped to visible_to_trolley = true
@@ -587,7 +589,8 @@ $$;
 revoke execute on function set_job_dipping(uuid, boolean) from public, anon;
 grant execute on function set_job_dipping(uuid, boolean) to authenticated;
 
--- job_pace: your logged-in account only
+-- job_pace: full access for your logged-in account; read-only for anon so
+-- trolley.html can fetch today's pace row for its ETA projection.
 alter table job_pace enable row level security;
 revoke all on job_pace from anon, authenticated;
 
@@ -598,6 +601,14 @@ create policy "authenticated full access to job_pace"
   with check (auth.role() = 'authenticated');
 
 grant select, insert, update, delete on job_pace to authenticated;
+
+drop policy if exists "anon read job_pace" on job_pace;
+create policy "anon read job_pace"
+  on job_pace for select
+  to anon
+  using (true);
+
+grant select on job_pace to anon;
 
 -- Views: trolley_jobs is public (anon), job_summary is yours only
 grant select on trolley_jobs to anon;
