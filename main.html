@@ -1379,7 +1379,11 @@ async function ensureItemReferenceId(itemNumber){
 
 async function addNote(btn){
   if(!isFullAccess()) return;
-  const textarea = btn.closest('.notesSection').querySelector('.noteNewBody');
+  // The add button lives inside .notesSection in the Parts panel/notes popup, but
+  // sits next to "Delete job" (outside .notesSection) in the job-list edit panel —
+  // fall back to the wrapping .editPanel so both layouts find the right textarea.
+  const scope = btn.closest('.notesSection') || btn.closest('.editPanel');
+  const textarea = scope.querySelector('.noteNewBody');
   const body = textarea.value.trim();
   if(!body) return;
   const itemNumber = btn.dataset.itemNumber;
@@ -1802,10 +1806,13 @@ function renderJobsMobile(){
         ${editing ? `
         <div class="editPanel">
           ${fieldsHtml(j, 'data-id', j.id, { trialIdPrefix: 'editTrial', doublesIdPrefix: 'editDoubles' })}
-          ${notesSectionHtml(j.item_number)}
+          ${notesSectionHtml(j.item_number, { hideAddBtn: true })}
           ${j.comment ? `<div class="jrComment">"${esc(j.comment)}"</div>` : ''}
           <div class="manageSaveState" data-savestate="${j.id}"></div>
-          <button class="danger deleteJobBtn" data-id="${j.id}" style="margin-top:10px;">Delete job</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+            ${isFullAccess() && j.item_number ? addNoteButtonHtml(j.item_number) : ''}
+            <button class="danger deleteJobBtn" data-id="${j.id}">Delete job</button>
+          </div>
         </div>` : ''}
       </div>`;
   }).join('');
@@ -1872,10 +1879,13 @@ function renderJobsDesktop(){
       <tr class="editDrawerRow" data-id="${j.id}">
         <td colspan="16"><div class="editPanel">
           ${fieldsHtml(j, 'data-id', j.id, { wide: true, trialIdPrefix: 'dTrial', doublesIdPrefix: 'dDoubles' })}
-          ${notesSectionHtml(j.item_number)}
+          ${notesSectionHtml(j.item_number, { hideAddBtn: true })}
           ${j.comment ? `<div class="jrComment">"${esc(j.comment)}"</div>` : ''}
           <div class="manageSaveState" data-savestate="${j.id}"></div>
-          <button class="danger deleteJobBtn" data-id="${j.id}" style="margin-top:10px;width:auto;">Delete job</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+            ${isFullAccess() && j.item_number ? addNoteButtonHtml(j.item_number) : ''}
+            <button class="danger deleteJobBtn" data-id="${j.id}" style="width:auto;">Delete job</button>
+          </div>
         </div></td>
       </tr>` : ''}`;
   }).join('');
