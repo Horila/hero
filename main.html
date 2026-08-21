@@ -61,7 +61,18 @@
   body.light .topBar{background:rgba(245,241,232,.85);}
   .topBar .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:14px;letter-spacing:-.01em;}
   .topBar .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--amber);box-shadow:0 0 8px var(--amber);}
+  .topBar .brand .dot.casting{background:var(--green);box-shadow:0 0 8px var(--green);}
   #themeToggle, #viewToggle, #userMenuBtn{width:auto;padding:7px 11px;font-size:11px;font-family:var(--mono);}
+
+  /* ---- Cast strip: what's on the floor right now, under the top bar ---- */
+  .castBar{display:none;flex-wrap:wrap;align-items:center;gap:4px 14px;padding:6px 16px;
+    background:rgba(6,11,22,.6);border-bottom:1px solid var(--line);font-family:var(--mono);font-size:11.5px;}
+  body.light .castBar{background:rgba(245,241,232,.6);}
+  .castBar.active{display:flex;}
+  .castBar .castField{display:flex;align-items:baseline;gap:5px;white-space:nowrap;}
+  .castBar .castField .lbl{color:var(--dim);font-size:9.5px;letter-spacing:.03em;text-transform:uppercase;}
+  .castBar .castField .val{color:var(--text);font-weight:700;}
+  .castBar #castNotes{font-weight:400;overflow:hidden;text-overflow:ellipsis;max-width:280px;}
 
   /* ---- User menu (top bar) ---- */
   .userMenuWrap{position:relative;}
@@ -306,7 +317,7 @@
 </head>
 <body>
 <div class="topBar">
-  <div class="brand"><span class="dot"></span>Core Counting</div>
+  <div class="brand"><span class="dot" id="brandDot"></span>Core Counting</div>
   <div style="display:flex;gap:8px;">
     <button id="viewToggle">🖥 Desktop</button>
     <button id="themeToggle">🌙 Dark</button>
@@ -320,6 +331,13 @@
       </div>
     </div>
   </div>
+</div>
+<div class="castBar" id="castBar">
+  <div class="castField"><span class="lbl">Casting</span><span class="val" id="castAm">—</span></div>
+  <div class="castField"><span class="lbl">Wt</span><span class="val" id="castWeight">—</span></div>
+  <div class="castField"><span class="lbl">Notes</span><span class="val" id="castNotes">—</span></div>
+  <div class="castField"><span class="lbl">ETA finish</span><span class="val" id="castEta">—</span></div>
+  <div class="castField"><span class="lbl">Next</span><span class="val" id="castNext">—</span></div>
 </div>
 
 <div id="userModalOverlay" class="modalOverlay">
@@ -716,6 +734,33 @@ function fmtEta(ms){
   return ms ? new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 }
 
+// Finish time of the current job specifically — computeEtas() only stores start times for
+// jobs *after* the current one, so this mirrors its first-iteration math standalone.
+function currentJobFinishEta(curJob){
+  const tph = parseFloat(pace.tons_per_hour);
+  if(!curJob || !pace.started_at || !Number.isFinite(tph) || tph <= 0) return null;
+  const startMs = new Date(pace.started_at).getTime();
+  if(!Number.isFinite(startMs)) return null;
+  let ton = plannedTonnage(curJob);
+  if(pace.remaining_qty != null && curJob.planned_qty){
+    ton = ton * (pace.remaining_qty / curJob.planned_qty);
+  }
+  return startMs + ton / tph * 3600000;
+}
+
+function renderCastBar(curJob, nextJob){
+  const bar = document.getElementById('castBar');
+  const active = !!curJob && !curJob.is_done;
+  bar.classList.toggle('active', active);
+  document.getElementById('brandDot').classList.toggle('casting', active);
+  if(!active) return;
+  document.getElementById('castAm').textContent = curJob.am_number || '—';
+  document.getElementById('castWeight').textContent = curJob.weight_kg ? `${curJob.weight_kg}kg` : '—';
+  document.getElementById('castNotes').textContent = curJob.comment || '—';
+  document.getElementById('castEta').textContent = fmtEta(currentJobFinishEta(curJob)) || '—';
+  document.getElementById('castNext').textContent = nextJob ? nextJob.am_number : '—';
+}
+
 function renderPaceCard(force){
   const curId = effectiveCurrentJobId();
   const curIdx = jobs.findIndex(j => j.id === curId);
@@ -729,6 +774,7 @@ function renderPaceCard(force){
   paceCalcStamp.textContent = pace.started_at
     ? 'Last calculated ' + new Date(pace.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + (pace.remaining_qty != null ? ` (${pace.remaining_qty} cores left)` : '')
     : 'Not calculated yet';
+  renderCastBar(curJob, nextJob);
 }
 
 async function loadPace(){
