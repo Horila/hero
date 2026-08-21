@@ -1474,8 +1474,17 @@ saveAllBtn.addEventListener('click', async ()=>{
   const itemNumbers = extractedJobs.map(j => j.item_number).filter(Boolean);
   let dipMemory = {};
   if(itemNumbers.length){
-    const { data: dipRows } = await supa.from('dip_items').select('item_number,needs_dipping').in('item_number', itemNumbers);
-    (dipRows || []).forEach(d => { dipMemory[d.item_number] = d.needs_dipping; });
+    // Two dip memories exist and aren't kept in sync with each other: dip_items
+    // (only written when someone ticks the dip checkbox on a job row) and
+    // item_reference.needs_dipping (only written via the Parts reference list
+    // edit or ref-sync after save). OR both in here so ticking dip in either
+    // place forwards to the next scanned job for that item_number.
+    const [{ data: dipRows }, { data: refDipRows }] = await Promise.all([
+      supa.from('dip_items').select('item_number,needs_dipping').in('item_number', itemNumbers),
+      supa.from('item_reference').select('item_number,needs_dipping').in('item_number', itemNumbers)
+    ]);
+    (dipRows || []).forEach(d => { dipMemory[d.item_number] = dipMemory[d.item_number] || d.needs_dipping; });
+    (refDipRows || []).forEach(d => { dipMemory[d.item_number] = dipMemory[d.item_number] || d.needs_dipping; });
   }
 
   const rows = extractedJobs.map(j => ({
