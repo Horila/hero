@@ -54,20 +54,22 @@
 
   /* ---- Top bar ---- */
   .topBar{
-    position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;
-    padding:10px 16px;background:rgba(6,11,22,.85);backdrop-filter:blur(10px);
+    position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;
+    gap:6px 14px;padding:10px 16px;background:rgba(6,11,22,.85);backdrop-filter:blur(10px);
     border-bottom:1px solid var(--line);
   }
   body.light .topBar{background:rgba(245,241,232,.85);}
-  .topBar .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:14px;letter-spacing:-.01em;}
-  .topBar .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--amber);box-shadow:0 0 8px var(--amber);}
+  .topBar .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:14px;letter-spacing:-.01em;order:1;}
+  .topBar .topBarActions{display:flex;gap:8px;order:2;}
+  .topBar .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--amber);box-shadow:0 0 8px var(--amber);flex-shrink:0;}
   .topBar .brand .dot.casting{background:var(--green);box-shadow:0 0 8px var(--green);}
+  .topBar .brand .brandText{display:flex;flex-direction:column;line-height:1.2;}
+  .topBar .brand .brandDate{font-size:9.5px;font-weight:400;color:var(--dim);font-family:var(--mono);letter-spacing:.03em;}
   #themeToggle, #viewToggle, #userMenuBtn{width:auto;padding:7px 11px;font-size:11px;font-family:var(--mono);}
 
-  /* ---- Cast strip: what's on the floor right now, under the top bar ---- */
-  .castBar{display:none;flex-wrap:wrap;align-items:center;gap:4px 14px;padding:6px 16px;
-    background:rgba(6,11,22,.6);border-bottom:1px solid var(--line);font-family:var(--mono);font-size:11.5px;}
-  body.light .castBar{background:rgba(245,241,232,.6);}
+  /* ---- Cast strip: what's on the floor right now, folded into the top bar ---- */
+  .castBar{display:none;flex-wrap:wrap;align-items:center;gap:4px 14px;font-family:var(--mono);font-size:11.5px;
+    flex-basis:100%;order:3;}
   .castBar.active{display:flex;}
   .castBar .castField{display:flex;align-items:baseline;gap:5px;white-space:nowrap;}
   .castBar .castField .lbl{color:var(--dim);font-size:9.5px;letter-spacing:.03em;text-transform:uppercase;}
@@ -317,8 +319,18 @@
 </head>
 <body>
 <div class="topBar">
-  <div class="brand"><span class="dot" id="brandDot"></span>Core Counting</div>
-  <div style="display:flex;gap:8px;">
+  <div class="brand">
+    <span class="dot" id="brandDot"></span>
+    <span class="brandText">DISA Plan<span class="brandDate" id="brandDate"></span></span>
+  </div>
+  <div class="castBar" id="castBar">
+    <div class="castField"><span class="lbl">Casting</span><span class="val" id="castAm">—</span></div>
+    <div class="castField"><span class="lbl">Wt</span><span class="val" id="castWeight">—</span></div>
+    <div class="castField"><span class="lbl">Notes</span><span class="val" id="castNotes">—</span></div>
+    <div class="castField"><span class="lbl">ETA finish</span><span class="val" id="castEta">—</span></div>
+    <div class="castField"><span class="lbl">Next</span><span class="val" id="castNext">—</span></div>
+  </div>
+  <div class="topBarActions">
     <button id="viewToggle">🖥 Desktop</button>
     <button id="themeToggle">🌙 Dark</button>
     <button id="itemRefListBtn">📋 Parts</button>
@@ -331,13 +343,6 @@
       </div>
     </div>
   </div>
-</div>
-<div class="castBar" id="castBar">
-  <div class="castField"><span class="lbl">Casting</span><span class="val" id="castAm">—</span></div>
-  <div class="castField"><span class="lbl">Wt</span><span class="val" id="castWeight">—</span></div>
-  <div class="castField"><span class="lbl">Notes</span><span class="val" id="castNotes">—</span></div>
-  <div class="castField"><span class="lbl">ETA finish</span><span class="val" id="castEta">—</span></div>
-  <div class="castField"><span class="lbl">Next</span><span class="val" id="castNext">—</span></div>
 </div>
 
 <div id="userModalOverlay" class="modalOverlay">
@@ -531,6 +536,7 @@
 // SUPABASE_URL / SUPABASE_ANON_KEY come from config.js
 const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 function todayStr(){ return new Date().toISOString().slice(0,10); }
+document.getElementById('brandDate').textContent = new Date().toLocaleDateString([], { weekday:'short', day:'numeric', month:'short' });
 
 // currentUser drives the view-only lock below — real enforcement is in Postgres RLS
 // (is_full_access()), this is just UX. Defaults to full_access so nothing flashes
