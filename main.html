@@ -112,7 +112,7 @@
   }
 
   #refreshBtn{
-    position:fixed;top:56px;right:12px;z-index:15;width:auto;padding:6px 10px;font-size:11px;
+    position:fixed;top:calc(var(--topbar-h, 56px) + 8px);right:12px;z-index:15;width:auto;padding:6px 10px;font-size:11px;
     background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-sm);box-shadow:var(--shadow);
   }
 
@@ -537,6 +537,12 @@
 const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 function todayStr(){ return new Date().toISOString().slice(0,10); }
 document.getElementById('brandDate').textContent = new Date().toLocaleDateString([], { weekday:'short', day:'numeric', month:'short' });
+
+// Top bar height varies (cast strip wraps in/out, window width reflows buttons) — keep
+// #refreshBtn (position:fixed) below it instead of hardcoding an offset that goes stale.
+new ResizeObserver(([entry]) => {
+  document.documentElement.style.setProperty('--topbar-h', entry.contentRect.height + 'px');
+}).observe(document.querySelector('.topBar'));
 
 // currentUser drives the view-only lock below — real enforcement is in Postgres RLS
 // (is_full_access()), this is just UX. Defaults to full_access so nothing flashes
