@@ -67,13 +67,17 @@
   .topBar .brand .brandDate{font-size:9.5px;font-weight:400;color:var(--dim);font-family:var(--mono);letter-spacing:.03em;}
   #themeToggle, #viewToggle, #userMenuBtn{width:auto;padding:7px 11px;font-size:11px;font-family:var(--mono);}
 
+  /* ---- Day picker + Live toggle + today's totals, folded into the top bar ---- */
+  .topBarStats{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;font-family:var(--mono);font-size:11.5px;
+    flex-basis:100%;order:3;}
+
   /* ---- Cast strip: what's on the floor right now, folded into the top bar ---- */
   .castBar{display:none;flex-wrap:wrap;align-items:center;gap:4px 14px;font-family:var(--mono);font-size:11.5px;
-    flex-basis:100%;order:3;}
+    flex-basis:100%;order:4;}
   .castBar.active{display:flex;}
-  .castBar .castField{display:flex;align-items:baseline;gap:5px;white-space:nowrap;}
-  .castBar .castField .lbl{color:var(--dim);font-size:9.5px;letter-spacing:.03em;text-transform:uppercase;}
-  .castBar .castField .val{color:var(--text);font-weight:700;}
+  .topBar .castField{display:flex;align-items:baseline;gap:5px;white-space:nowrap;}
+  .topBar .castField .lbl{color:var(--dim);font-size:9.5px;letter-spacing:.03em;text-transform:uppercase;}
+  .topBar .castField .val{color:var(--text);font-weight:700;}
   .castBar #castNotes{font-weight:400;overflow:hidden;text-overflow:ellipsis;max-width:280px;}
 
   /* ---- User menu (top bar) ---- */
@@ -116,8 +120,7 @@
     background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-sm);box-shadow:var(--shadow);
   }
 
-  /* ---- Date chip (small dropdown-style date picker, top of page) ---- */
-  .dateRow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+  /* ---- Date chip (small dropdown-style date picker, in the top bar) ---- */
   .dateChip{display:inline-flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:5px 10px 5px 12px;}
   .dateChip label{margin:0;font-size:9.5px;white-space:nowrap;}
   .dateChip input{width:auto;padding:3px 6px;margin:0;border:none;background:transparent;font-size:12px;color:var(--text);}
@@ -127,14 +130,6 @@
   #pushLiveBtn.live{border-color:var(--green);color:var(--green);}
   #pushLiveBtn.live .liveDot{background:var(--green);box-shadow:0 0 6px var(--green);}
 
-  /* ---- Stat tiles (KPIs, stacked next to the additions card) ---- */
-  .statStack{display:flex;flex-direction:column;gap:8px;width:180px;max-width:100%;}
-  .statTile{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px 10px;box-shadow:var(--shadow);}
-  .statTile .num{font-family:var(--mono);font-size:22px;font-weight:800;line-height:1;}
-  .statTile .lbl{font-family:var(--mono);font-size:9.5px;color:var(--dim);letter-spacing:.04em;margin-top:5px;text-transform:uppercase;}
-  .statTile.ok .num{color:var(--green);}
-  .statTile.warn .num{color:var(--red);}
-  .statTile.neutral .num{color:var(--amber);}
 
   /* ---- Scan-review cards (pending OCR jobs, bottom of page) ---- */
   .jobCard{border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px;margin-bottom:10px;background:var(--panel2);}
@@ -283,8 +278,6 @@
   /* ---- Desktop dashboard view (toggled via body.desktop-view) ---- */
   .desktopToolbar{display:none;}
   body.desktop-view #app{max-width:1400px;}
-  .statTile.stillMaking{display:none;}
-  body.desktop-view .statTile.stillMaking{display:block;}
   body.desktop-view .desktopToolbar{display:flex;gap:10px;align-items:center;padding:10px 12px;}
   .desktopToolbar input{flex:1;width:auto;margin:0;}
   .filterChips{display:flex;gap:6px;flex-wrap:wrap;}
@@ -322,6 +315,16 @@
   <div class="brand">
     <span class="dot" id="brandDot"></span>
     <span class="brandText">DISA Plan<span class="brandDate" id="brandDate"></span></span>
+  </div>
+  <div class="topBarStats" id="topBarStats">
+    <div class="dateChip">
+      <label>DAY</label>
+      <input type="date" id="jobDatePicker">
+    </div>
+    <button id="pushLiveBtn"><span class="liveDot"></span><span id="pushLiveLabel">Push Live</span></button>
+    <div class="castField"><span class="lbl">Jobs</span><span class="val" id="statJobsToday">—</span></div>
+    <div class="castField"><span class="lbl">Used</span><span class="val" id="statTonnageUsed">—</span></div>
+    <div class="castField"><span class="lbl">Left GC</span><span class="val" id="statLeftGC">—</span></div>
   </div>
   <div class="castBar" id="castBar">
     <div class="castField"><span class="lbl">Casting</span><span class="val" id="castAm">—</span></div>
@@ -413,14 +416,6 @@
 
   <!-- ============ MAIN APP — single page, no tabs ============ -->
   <div id="mainScreen" style="padding-top:8px;">
-    <div class="dateRow">
-      <div class="dateChip">
-        <label>DAY</label>
-        <input type="date" id="jobDatePicker">
-      </div>
-      <button id="pushLiveBtn"><span class="liveDot"></span><span id="pushLiveLabel">Push Live</span></button>
-    </div>
-
     <div class="topCardsRow">
       <div class="card" style="padding:10px 12px;">
         <h2 class="cardHeader">TONNAGE BY GRADE</h2>
@@ -441,8 +436,6 @@
           <span id="paceCalcStamp"></span>
         </div>
       </div>
-
-      <div class="statStack" id="summaryStats"></div>
 
       <div id="additionsBox" class="eqCard">
         <div class="additionsHead">
@@ -1061,7 +1054,6 @@ addUserBtn.addEventListener('click', async ()=>{
 const jobDatePicker = document.getElementById('jobDatePicker');
 const pushLiveBtn = document.getElementById('pushLiveBtn');
 const pushLiveLabel = document.getElementById('pushLiveLabel');
-const summaryStats = document.getElementById('summaryStats');
 const gradeTable = document.getElementById('gradeTable');
 const refreshBtn = document.getElementById('refreshBtn');
 const jobList = document.getElementById('jobList');
@@ -1754,11 +1746,9 @@ function updateStatsBar(){
     totalTonnage += curTonnage;
   }
   const tonnageLeft = tonnageUntilGradeChange(jobs);
-  summaryStats.innerHTML = `
-    <div class="statTile neutral"><div class="num">${jobs.length}</div><div class="lbl">Jobs today</div></div>
-    <div class="statTile neutral"><div class="num">${totalTonnage.toFixed(1)}t</div><div class="lbl">Tonnage used so far</div></div>
-    <div class="statTile stillMaking neutral"><div class="num">${tonnageLeft.toFixed(1)}t</div><div class="lbl">Left till grade change</div></div>
-  `;
+  document.getElementById('statJobsToday').textContent = jobs.length;
+  document.getElementById('statTonnageUsed').textContent = totalTonnage.toFixed(1) + 't';
+  document.getElementById('statLeftGC').textContent = tonnageLeft.toFixed(1) + 't';
 
   const gradeTotals = {};
   jobs.forEach(r=>{
