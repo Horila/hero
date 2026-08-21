@@ -761,7 +761,8 @@ function renderCastBar(curJob, nextJob){
   if(!active) return;
   document.getElementById('castAm').textContent = curJob.am_number || '—';
   document.getElementById('castWeight').textContent = curJob.weight_kg ? `${curJob.weight_kg}kg` : '—';
-  document.getElementById('castNotes').textContent = curJob.comment || '—';
+  const itemNotes = notesByItemNumber[curJob.item_number] || [];
+  document.getElementById('castNotes').textContent = itemNotes.length ? itemNotes[0].body : '—';
   document.getElementById('castEta').textContent = fmtEta(currentJobFinishEta(curJob)) || '—';
   document.getElementById('castNext').textContent = nextJob ? nextJob.am_number : '—';
 }
@@ -1801,9 +1802,8 @@ function renderJobsMobile(){
         ${editing ? `
         <div class="editPanel">
           ${fieldsHtml(j, 'data-id', j.id, { trialIdPrefix: 'editTrial', doublesIdPrefix: 'editDoubles' })}
-          ${notesSectionHtml(j.item_number, { hideAddBtn: true })}
+          ${notesSectionHtml(j.item_number)}
           ${j.comment ? `<div class="jrComment">"${esc(j.comment)}"</div>` : ''}
-          ${isFullAccess() && j.item_number ? addNoteButtonHtml(j.item_number) : ''}
           <div class="manageSaveState" data-savestate="${j.id}"></div>
           <button class="danger deleteJobBtn" data-id="${j.id}" style="margin-top:10px;">Delete job</button>
         </div>` : ''}
@@ -1872,9 +1872,8 @@ function renderJobsDesktop(){
       <tr class="editDrawerRow" data-id="${j.id}">
         <td colspan="16"><div class="editPanel">
           ${fieldsHtml(j, 'data-id', j.id, { wide: true, trialIdPrefix: 'dTrial', doublesIdPrefix: 'dDoubles' })}
-          ${notesSectionHtml(j.item_number, { hideAddBtn: true })}
+          ${notesSectionHtml(j.item_number)}
           ${j.comment ? `<div class="jrComment">"${esc(j.comment)}"</div>` : ''}
-          ${isFullAccess() && j.item_number ? addNoteButtonHtml(j.item_number) : ''}
           <div class="manageSaveState" data-savestate="${j.id}"></div>
           <button class="danger deleteJobBtn" data-id="${j.id}" style="margin-top:10px;width:auto;">Delete job</button>
         </div></td>
